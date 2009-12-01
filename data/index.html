@@ -1,0 +1,17 @@
+? extends 'base.html';
+
+? block title => 'Ark Advent Calendar 2009';
+
+? block content => sub {
+
+<ul>
+? for my $entry (sort { $a->filename cmp $b->filename } @{ $page->entries }) {
+? my ($eid) = $entry->filename =~ /^(\d+)/;
+<li><a href="./<?= $entry->filename ?>.html"><?= $eid ?>日目: <?= $entry->title ?></a></li>
+? } #endfor
+</ul>
+
+? } #endblock
+
+
+

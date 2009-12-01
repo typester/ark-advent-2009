@@ -1,0 +1,7 @@
+? extends 'base.html';
+
+? my ($eid) = $entry->filename =~ /^(\d+)/;
+
+<? block title => sub { ?><?= $eid ?>日目: <?= $entry->title ?><? } ?>
+
+? block content => sub { $entry->body }
