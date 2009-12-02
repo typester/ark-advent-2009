@@ -7,3 +7,6 @@ plugins:
   - module: Meta
   - module: Markdown
   - module: AutoIndex
+  - module: AutoIndex
+    config:
+      filename: index.xml
