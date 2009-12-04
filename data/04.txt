@@ -1,0 +1,480 @@
+データモデルその2
+
+昨日は DBIx::Class の基本について学習しました。まだ生き残っていますか？
+
+今日は引き続きデータモデルについて学習します。
+
+昨日のフィードバック
+-----------------
+
+本日の内容に入る前に、昨日の内容で `use base` や `__PACKAGE__` がなにを意味しているかわからないという人がいましたので少し説明しておきます。
+
+    use base 'ClassName';
+
+は ClassName と言うクラスを継承すると言う意味です。詳しくは `perldoc base` などを参照ください。
+
+    __PACKAGE__
+
+はそれが書かれた行が属するパッケージ名を表します。したがって
+
+    package Jobeet::Schema;
+    use strict;
+    use warnings;
+    use base 'DBIx::Class::Schema';
+    
+    __PACKAGE__->load_namespaces;
+    
+    1;
+
+と言うコードの `__PACKAGE__` は `Jobeet::Schema` を表します。ここで
+
+    Jobeet::Schema->load_namespaces;
+
+としても意味は同じですし、これでもコードはただしく動作します。
+
+またこの `Jobeet::Schema` は `DBIx::Class::Schema` を継承していることもわかりますね。
+
+
+本日の内容
+--------
+
+それでは改めて本日の内容を説明しましょう。本日は Ark から昨日定義した Jobeet::Schema を使用する方法を学習し、
+そしてスキーマ定義を変更した場合 DBIx::Class を使用してどのようにそれをアップグレードするかを学習します。また簡単なスクリプトを使用してデータベースにデフォルトのデータを格納しましょう。
+
+Arkのモデル
+---------
+
+Arkのモデルについての詳細は明日学習します。詳しいことはいまは置いておいて Ark モデルとして Jobeet::Schema を使えるようにしてみましょう。
+
+以下のようにして Jobeet::Models と言うクラスを定義してください。
+
+    package Jobeet::Models;
+    use strict;
+    use warnings;
+    use Ark::Models '-base';
+    
+    register Schema => sub {
+        my $self = shift;
+    
+        my $conf = $self->get('conf')->{database}
+            or die 'require database config';
+    
+        $self->ensure_class_loaded('Jobeet::Schema');
+        Jobeet::Schema->connect(@$conf);
+    };
+    
+    for my $table (qw/Job Category CategoryAffiliate Affiliate/) {
+        register "Schema::$table" => sub {
+            my $self = shift;
+            $self->get('Schema')->resultset($table);
+        };
+    }
+    
+    1;
+
+今日のところは register という関数でモデルを登録するのだなということを覚えておいてください。このコードでは
+
+ * Schema
+ * Schema::Job
+ * Schema::Category
+ * Schema::CategoryAffiliate
+ * Schema::Affiliate
+
+と言う名前で Ark のモデルを定義したことになります。
+
+また
+
+    my $conf = $self->get('conf')->{database}
+
+と言う部分があるのにお気づきでしょうか。ここに直接データベース設定を書いてもかまいませんが、Ark は設定ファイルによる設定もサポートしていますのでここではそれを利用します。
+
+新しく config.pl と言うファイルを作成し、以下のように書いてください：
+
+    my $home = Jobeet::Models->get('home');
+    
+    return {
+        database => [
+            'dbi:SQLite:' . $home->file('database.db'), '', '',
+             {
+                 unicode        => 1,
+                 sqlite_unicode => 1,
+             },
+        ],
+    };
+
+これはアプリケーションホームディレクトリ（トップディレクトリ）の database.db と言うファイル名の SQLite データベースを使用すると言う意味です。
+また Ark は *内部はすべてutf8であつかう* というモダンPerlの流儀に沿ったフレームワークなので、unicode 周りのオプションを指定しています。これは `DBD::SQLite` のオプションなのでほかの `DBD::mysql` などを使用する場合は対応するそちらのオプションを指定する必要があります。例えば MySQL を使用する場合 config.pl は
+
+    return {
+        database => [
+            'dbi:mysql:database_name', 'username', 'password',
+             {
+                 mysql_enable_utf8 => 1,
+                 on_connect_do     => ['SET NAMES utf8'],
+             },
+        ],
+    };
+
+のようになります。このチュートリアルでは SQLite を使用していきます。
+
+最後に Jobeet アプリケーションのデフォルトモデルとして `Jobeet::Models` を使用するために Jobeet.pm に以下の1行をいれてください。
+
+    use_model 'Jobeet::Models';
+
+お疲れさまでした。以上の作業で無事に Jobeet::Models は Jobeet アプリケーションのモデルクラスとして動作するようになります。
+
+今日は大変めんどくさいコードを書かせてしまいましたが、熟練した Ark プログラマーはこのようにアプリケーションを作成するたびに同じようなことを書くと言うことはしません。ark.pl で作成するアプリケーションのスケルトンは開発者が自由にカスタマイズすることが出来るようになっているのです。詳しくはドキュメントの[ひな形のテンプレートをカスタマイズする](http://opensource.kayac.com/ja/projects/ark/documents/ark#%E3%81%B2%E3%81%AA%E5%BD%A2%E3%81%AE%E3%83%86%E3%83%B3%E3%83%97%E3%83%AC%E3%83%BC%E3%83%88%E3%82%92%E3%82%AB%E3%82%B9%E3%82%BF%E3%83%9E%E3%82%A4%E3%82%BA%E3%81%99%E3%82%8B)を参照ください。
+
+スキーマのバージョニング
+--------------------
+
+Arkモデルについてはまた明日学習することにして、DBIx::Class がサポートするスキーマのバージョニングについて学習していきましょう。
+
+以下のようなストーリーを考えてみてください。
+
+あなたはマッシュとリサと一緒に新しいプロジェクトをはじめました。ある日、あなたがいない間にマッシュがデータベースに新しいカラムを追加しました。その後リサも他のテーブルのカラム定義を変更しました。
+
+あなたはデスクに戻ったらマッシュとリサがそれぞれした変更を適用する必要があります。
+コードをpullしてその後はどうしますか？ 手動でデータベースを修正しますか？
+
+自分の環境だけですむならそれでもそんなに苦労はしないでしょう。しかし手元の開発環境と、ステージングサーバー、そして本番サーバーなど、いろんな環境にその修正をしなければいけなかったとしたらどうでしょう。そのようなシステムではデータベース定義の変更というのは細心の注意を払う必要があります。
+
+DBIx::Class はデータベースのバージョニングをサポートするのでそのような苦労をする必要はありません。コードのデータベースバージョンが、実際のデータベースのバージョンより新しくなっていたら（誰かがデータベース定義を更新したら）DBIx::Class はアプリケーション起動時に警告を出してくれますし、コマンド一つで最新のデータベース定義へデータベースを更新することが出来ます。
+
+それでは作業に入りましょう。DBIx::Class でバージョニングサポートを有効にするには DBIx::Class::Schema::Versioned を使います。Jobeet::Schema を以下のように修正しましょう。
+
+    package Jobeet::Schema;
+    use strict;
+    use warnings;
+    use base 'DBIx::Class::Schema';
+    
+    our $VERSION = '0';
+    
+    __PACKAGE__->load_namespaces;
+    
+    __PACKAGE__->load_components('Schema::Versioned');
+    __PACKAGE__->upgrade_directory('sql/');
+    
+    1;
+
+変更点はバージョニングのためのバージョン情報（`$VERSION`）を追加したのと `Schema::Versioned` コンポーネントをロードし sql 定義ファイルのディレクトリを指定します。
+
+そしてまた面倒な作業なのですが、バージョニングをサポートするために二つのスクリプトを用意する必要があるのです。先ほどのモデル定義同様、通常は自動生成するものですが、最初は自分で書いてみましょう。
+
+二つのスクリプトとは、
+
+ * スキーマ定義（DDL）ファイルを作成するスクリプト
+ * DDLを元にデータベースをアップグレードするスクリプト
+
+です。scriptディレクトリを作成し、`script/create_ddl.pl` として以下のような物を書いてください。
+
+    #!/usr/bin/env perl
+    
+    use strict;
+    use warnings;
+    use FindBin::libs;
+    use Path::Class qw/file/;
+    
+    use Jobeet::Models;
+    
+    my $schema = models('Schema');
+    
+    my $current_version = $schema->schema_version;
+    my $next_version    = $current_version + 1;
+    
+    $schema->create_ddl_dir(
+        [qw/SQLite MySQL/],
+        $next_version,
+        "$FindBin::Bin/../sql/",
+    );
+    
+    {   # replace version
+        my $f = file( $INC{'Jobeet/Schema.pm'} );
+        my $content = $f->slurp;
+        $content =~ s/(\$VERSION\s*=\s*(['"]))(.+?)\2/$1$next_version$2/
+            or die "Failed to replace version.";
+    
+        my $fh = $f->openw or die $!;
+        print $fh $content;
+        $fh->close;
+    }
+
+このスクリプトは sql ディレクトリに Jobeet::Schema の定義をバージョン番号付きで書き出します。
+
+試しに実行しましょう。実行する前に sql と言うディレクトリを作っておいてくださいね。
+
+    $ perl ./script/create_ddl.pl
+
+その後 sql ディレクトリを見てみましょう。
+
+    $ ls -l sql
+    total 16
+    -rw-r--r--  1 typester  staff  2453 12  4 18:50 Jobeet-Schema-1-MySQL.sql
+    -rw-r--r--  1 typester  staff  1831 12  4 18:50 Jobeet-Schema-1-SQLite.sql
+
+このようなファイルが書き出されます。1 というのがスキーマ定義のバージョンです。
+このスクリプトは実行するたびに Jobeet::Schema のバージョン番号をインクリメントし、その定義を sql ディレクトリに格納します。
+
+Jobeet::Schema を開き直し、`$VERSION` が更新され 1 になっているのを確認してください。
+
+`[qw/SQLite MySQL/]` と言う部分は DDL ファイルを作成するデータベースの種類を指定します。ここでは2種類指定していますが、変更したい場合はこの部分を修正することで対応するデータベースの種類を変更できます。
+
+もう一つのスクリプトはこの DDL ファイルを使用して実際のデータベースをアップグレードする物です。`script/upgrade_database.pl` として以下のようなスクリプトを作成してください。
+
+    #!/usr/bin/env perl
+    
+    use strict;
+    use warnings;
+    use FindBin::libs;
+    use Path::Class 'file';
+    
+    use Getopt::Long;
+    
+    GetOptions(
+        \my %options,
+        qw/dry-run/
+    );
+    
+    use SQL::Translator;
+    use SQL::Translator::Diff;
+    
+    use Jobeet::Models;
+    
+    my $schema = models('Schema');
+    
+    my $sqltargs = {
+        add_drop_table          => 1,
+        ignore_constraint_names => 1,
+        ignore_index_names      => 1,
+    };
+    
+    sub parse_sql {
+        my ($file, $type) = @_;
+    
+        my $t = SQL::Translator->new($sqltargs);
+    
+        $t->parser($type)
+            or die $t->error;
+    
+        my $out = $t->translate("$file")
+            or die $t->error;
+    
+        my $schema = $t->schema;
+    
+        $schema->name( $file->basename )
+            unless ( $schema->name );
+    
+        $schema;
+    }
+    
+    no warnings 'redefine', 'once';
+    my $upgrade_file;
+    local *Jobeet::Schema::create_upgrade_path = sub {
+        $upgrade_file = $_[1]->{upgrade_file};
+    
+        my $current_version = $schema->get_db_version;
+        my $schema_version  = $schema->schema_version;
+        my $database        = $schema->storage->sqlt_type;
+        my $dir             = $schema->upgrade_directory;
+    
+        my $prev_file = $schema->ddl_filename($database, $current_version, $dir);
+        my $next_file = $schema->ddl_filename($database, $schema_version, $dir);
+    
+        my $current_schema = eval { parse_sql file($prev_file), $database } or die $@;
+        my $next_schema    = eval { parse_sql file($next_file), $database } or die $@;
+    
+        my $diff = SQL::Translator::Diff::schema_diff(
+            $current_schema, $database,
+            $next_schema, $database,
+            $sqltargs,
+        );
+    
+        if ($upgrade_file) {
+            my $fh = file($upgrade_file)->openw or die $!;
+            print $fh $diff;
+            $fh->close;
+        }
+        else {
+            print $diff;
+        }
+    };
+    
+    if ($schema->get_db_version) {
+        if ($options{'dry-run'}) {
+            $schema->create_upgrade_path;
+        }
+        else {
+            $schema->upgrade;
+            unlink $upgrade_file if $upgrade_file;
+        }
+    }
+    else {
+        $schema->deploy;
+    }
+
+このスクリプトは DDL ファイルと Jobeet::Schema のバージョンから最新のものにデータベースを更新するスクリプトです。データベースがない場合は自動で作成してくれます。
+
+試しに実行してみましょう。
+
+    $ perl ./script/upgrade_database.pl
+
+database.db という config.pl で指定したデータベースが作成されたでしょうか？ 今後はデータベースが古くなったらこのスクリプトを使用していつでも最新の構成にすることができます。
+
+### スキーマを変更する
+
+さて、昨日のチュートリアルを注意深く読んでいた方は気がついているかもしれません。このスキーマ変更を学習するために昨日定義したスキーマ定義はあえて不十分だったのです！ 今日その足りない定義を追加しスキーマ定義を完璧にするとともにスキーマのバージョニングがただしく動作することを学習しましょう。
+
+昨日した定義の中でたりないものは Job テーブルの company, logo, url の3つのカラムです。`Jobeet::Schema::Result::Job` のカラム定義に以下を追加しましょう。
+
+        company => {
+            data_type   => 'VARCHAR',
+            size        => 255,
+            is_nullable => 1,
+        },
+        logo => {
+            data_type   => 'VARCHAR',
+            size        => 255,
+            is_nullable => 1,
+        },
+        url => {
+            data_type   => 'VARCHAR',
+            size        => 255,
+            is_nullable => 1,
+        },
+
+定義を更新したので、DDLファイルも新しく作り直し、バージョン番号を上げます。それをやるには以下のスクリプトを実行するんでした：
+
+    $ perl ./script/create_ddl.pl
+
+さてこれで、sql ディレクトリに新しいファイルが出来ているはずです。
+
+    $ ls -l sql
+    total 32
+    -rw-r--r--  1 typester  staff  2453 12  4 18:50 Jobeet-Schema-1-MySQL.sql
+    -rw-r--r--  1 typester  staff  1831 12  4 18:50 Jobeet-Schema-1-SQLite.sql
+    -rw-r--r--  1 typester  staff  2533 12  4 19:09 Jobeet-Schema-2-MySQL.sql
+    -rw-r--r--  1 typester  staff  1905 12  4 19:09 Jobeet-Schema-2-SQLite.sql
+
+またスクリプトを叩いたときに
+
+    Versions out of sync. This is 2, your database contains version 1, please call upgrade on your Schema.
+
+という警告が出力されたのに気がついたでしょうか。これは Schema クラスのバージョン定義と実際のデータベースのバージョンが違っていると言う警告です。今後も開発する中でアプリケーション起動時に同じような警告が出たらそれはデータベースがコードより古いと言うことを意味します。
+
+データベースを最新の定義に更新するには先ほどの upgrade_database.pl を再び実行します。
+データベースを作成するのではなくアップグレードする場合、-d オプション、もしくは --dry-run オプションを使用すると実際にアップグレードするまえに実行する SQL を確認することが出来ます。まずそれを実行してみましょう。
+
+    $ perl ./script/upgrade_database.pl -d
+
+以下のような出力が出ましたか？
+
+    BEGIN;
+    ALTER TABLE jobeet_job ADD COLUMN company VARCHAR(255);
+    ALTER TABLE jobeet_job ADD COLUMN logo VARCHAR(255);
+    ALTER TABLE jobeet_job ADD COLUMN url VARCHAR(255);
+    COMMIT;
+
+期待する内容になっていますね。それではアップグレードしましょう。
+
+    $ perl ./script/upgrade_database.pl
+
+これで database.db は最新の定義になりました。もう一度スクリプトを実行してみると
+
+    $ perl script/upgrade_database.pl
+    DBIx::Class::Schema::Versioned::upgrade(): Upgrade not necessary
+
+のようにアップグレードが必要ないと言うメッセージがでます。これはデータベースが最新であると言うことを意味します。
+
+これでデータベースのバージョニングがただしく行えるようになりました。
+先のストーリーではあなたはマッシュやリサがした変更は `upgrade_database.pl` を実行するだけでどちらも適用することができるでしょう。
+
+初期データ
+--------
+
+データベースにテーブルが作成されました。しかしデータがありません。 Web アプリケーションには3種類のデータがあります:
+
+ * 初期データ: アプリケーションを動作させるのに必要なデータ。 たとえば、Jobeet ではカテゴリが必要となります。 もしカテゴリが無ければ誰も仕事を投稿できなくなります。 
+ * テストデータ: アプリケーションのテストに必要です。 開発者にとって、ストーリーどおりに Jobeet が動作するのを確認するためにテストを書きます。 自動化テストを書くのが1番よい方法です。 テストを実施するたびにテストデータでデータベースをクリアする必要があります。
+ * ユーザーデータ: アプリケーションの運用中にユーザーによって作られたデータ
+
+テストデータに関しては後日学習しましょう。 初期データをいれるのには DBIx::Class の学習もかねて初期データをいれるスクリプトを書いてみましょう。script/insert_default_data.pl と言う名前で以下のようなスクリプトを書いてみてください。
+
+    #!/usr/bin/env perl
+    
+    use strict;
+    use warnings;
+    use FindBin::libs;
+    
+    use Jobeet::Models;
+    
+    # create default Categories
+    for my $category_name (qw/Design Programming Manager Administrator/) {
+        models('Schema::Category')->create({ name => $category_name });
+    }
+    
+    # create default Jobs
+    my $programming_category =
+        models('Schema::Category')->find({ name => 'Programming' });
+    $programming_category->add_to_jobs({
+        type         => 'full-time',
+        company      => 'Sensio Labs',
+        logo         => 'sensio-labs.gif',
+        url          => 'http://www.sensiolabs.com/',
+        position     => 'Web Developer',
+        location     => 'Paris, France',
+        description  => q[You've already developed websites with symfony and you want to work with Open-Source technologies. You have a minimum of 3 years experience in web development with PHP or Java and you wish to participate to development of Web 2.0 sites using the best frameworks available.],
+        how_to_apply => 'Send your resume to fabien.potencier [at] sensio.com',
+        is_public    => 1,
+        is_activated => 1,
+        token        => 'job_sensio_labs',
+        email        => 'job@example.com',
+        expires_at   => '2010-10-10',
+    });
+    
+    my $design_category = models('Schema::Category')->find({ name => 'Design' });
+    $design_category->add_to_jobs({
+        type         => 'part-time',
+        company      => 'Extreme Sensio',
+        logo         => 'extreme-sensio.gif',
+        url          => 'http://www.extreme-sensio.com/',
+        position     => 'Web Designer',
+        location     => 'Paris, France',
+        description  => q[Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Utenim ad minim veniam, quis nostrud exercitation ullamco laborisnisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in. Voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpaqui officia deserunt mollit anim id est laborum.],
+      how_to_apply   => 'Send your resume to fabien.potencier [at] sensio.com',
+        is_public    => 1,
+        is_activated => 1,
+        token        => 'job_extreme_sensio',
+        email        => 'job@example.com',
+        expires_at   => '2010-10-10',
+    });
+
+そしてこれを実行してみてください。実行される SQL がみたいときは DBIC_TRACE 環境変数をつかうといいですよ。
+
+    $ DBIC_TRACE=1 perl script/insert_default_data.pl
+
+ずらずらとCREATE文がでましたか？ これでデフォルトデータも出来ました。
+
+もしデータベースを最初から作りたい場合は
+
+    $ rm database.db
+    $ perl script/upgrade_database.pl
+    $ perl script/insert_default_data.pl
+
+のようにすれば作り直すことが出来ますよ。
+
+さてここで作成した二つの Job データはそれぞれ画像データを必要とします。 (http://www.symfony-project.org/get/jobeet/sensio-labs.gif、http://www.symfony-project.org/get/jobeet/extreme-sensio.gif) からダウンロードして root/uploads/jobs/ ディレクトリに設置してください。
+
+また明日
+-------
+
+今日でデータベースを使用する準備は完全に整いました。
+明日は、Web フレームワークで最もよく使われるパラダイムの1つである MVC デザインパターンについて話します。
+
+今日のコードは Jobeet の git リポジトリから入手できます。 day-04 タグをチェックアウトしてください:
+
+    $ git clone git://github.com/typester/ark-jobeet.git
+    $ cd ark-jobeet
+    $ git checkout day-04
+
+
+
