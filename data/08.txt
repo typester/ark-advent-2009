@@ -44,7 +44,6 @@ Ark のバージョンアップ
 
  * String::CamelCase
  * Data::Page::Navigation
- * Text::MicroTemplate::Extended
 
 CPAN 経由でインストールしておいてください。
 
