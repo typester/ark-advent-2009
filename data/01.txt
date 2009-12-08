@@ -82,14 +82,14 @@ CPAN コマンドの設定が完了したら Ark をインストールしまし�
 
 まずは Ark をダウンロードして展開します。
 
-    $ wget http://cloud.github.com/downloads/typester/ark-perl/Ark-0.11.tar.gz
-    $ tar -zxvf Ark-0.11.tar.gz
+    $ wget http://cloud.github.com/downloads/typester/ark-perl/Ark-0.12.tar.gz
+    $ tar -zxvf Ark-0.12.tar.gz
 
 ### 依存モジュールのインストール
 
 展開したディレクトリに移動し、
 
-    $ cd Ark-0.11
+    $ cd Ark-0.12
 
 以下のコマンドで依存モジュールをインストールします。
 
