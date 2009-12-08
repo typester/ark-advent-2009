@@ -321,7 +321,7 @@ root/job/partial_jobs.mt として以下のようなテンプレートを作り�
 
 第二引数目以降はテンプレートに渡す引数そのままになります。
 
-両方からのHTMLコードの<table>をinclude_partial()の呼び出しで置き換えます:
+両方からのHTMLコードの `<table>` を `include` の呼び出しで置き換えます:
 
 root/job/index.mt:
 
