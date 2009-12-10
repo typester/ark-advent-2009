@@ -1,857 +1,336 @@
-ユニットテスト
+続・フォーム
 
-今日は、完全に異なる内容: 自動化されたテストを語ります。このトピックの内容はとても大きいので、すべての内容をカバーするのに2日まるごとかかります。
+昨日はフォームの基本を学習し、求人フォームの残りの部分（プレビュー・投稿）の機能を宿題としました。
+今日はその答え合わせをしましょう。
 
-Arkのすべてのテストは、慣習的にプロジェクトの`t/`ディレクトリに設置されます。
+コントローラとのつなぎこみ
+----------------------
 
-今日はユニットテストをカバーし、明日は機能テストに専念します。
+昨日はフォームを表示するとこまでしかやりませんでした。
+フォームの内容を POST したときにコントローラではどのように処理をするのでしょうか。 Job コントローラをこのようにしてみます：
 
-ユニットテスト
---------------------------
-
-ユニットテストを書くのはWeb開発のベストプラクティスの中で実行するのがもっとも難しいことです。 Web開発者は作品をテストすることに本当に慣れていないのと、たくさんの疑問がわき上がります: 機能を実装する前にテストを書かなければならないのか？何をテストする必要があるのか？テストはすべての単独の~エッジケース~をカバーする必要があるのか？ すべてにおいてよいテストをできる方法は？しかし通常、最初のテストははるかに基本的です: どこで始めるのか？
-
-私たちがテストを強く推奨しているとしても、Arkのアプローチは実践的です: テストを何もしないよりもしたほうが常によいです。テストなしのコードがすでにたくさんありますか？問題ありません。テストの利点から恩恵を受けるためにフルテストスイートを用意する必要はありません。コードでバグを見つけたときにテストを追加することから始めます。時間が経過して、あなたのコードはよりよいものになり、~コードカバレッジ~は上昇し、テストにより自信を持つようになります。実践的なアプローチを始めることで、 時間とともにテストがより快適になります。次のステップは新しい機能に対してテストを書くことです。すぐに、テストがやみつきになりますよ。
-
-たいていのテストライブラリの問題は急激な学習曲線です。
-
-Arkを使ったプロジェクトのテストには、CPAN上にある数多のTestモジュールのなかから好きな物を使う事ができます。
-
-テストを書く作業を簡単にするためにArkがとてもシンプルなテストライブラリである `Test::More` を使用する事ができるのはそういうわけです。
-
-前準備
---------------------------
-
-テスト中に作られるデータが本番のデータベースに書き込まれてしまったら大問題です。
-確実なテストを行うために、データベースの内容が適切に初期化された状態でテストがスタートする事を保証する必要もあります。
-
-これらの問題を解決するために、テストの事前処理を行うための Jobeet::Test モジュールを作りましょう。
-テスト用のデータベースにはSQLiteを使用します。
-
-    package Jobeet::Test;
-    use Ark 'Test';
-
-    use File::Temp qw/tempdir/;
-    use Jobeet::Models;
-
-    sub import {
-        my ($class, $app, %options) = @_;
-        $app ||= 'Jobeet';
-
-        {
-            my $dir = tempdir( CLEANUP => 1 );
-
-            models('conf')->{database} = [
-                "dbi:SQLite:$dir/jobeet-test-database.db", undef, undef,
-                { unicode => 1, ignore_version => 1 },
-            ];
-            models('Schema')->deploy;
+    sub create :Local :Form('Jobeet::Form::Job') {
+        my ($self, $c) = @_;
+    
+        if ($c->req->method eq 'POST' and $self->form->submitted_and_valid) {
+            # バリデーション成功、求人を生成する
         }
-
-        @_ = ($class, $app, %options);
-        goto $class->can('SUPER::import');
     }
 
-テストの先頭で `use Jobeet::Test;` すると、テスト用の新しいデータベースが自動的に作成され、接続先に設定されます。
-新しく作成されたテスト用のデータベースは、テストスクリプトが終了すると自動的に破棄されるので、本番のデータを壊す事無くテストを行う事ができるようになります。
+リクエストが POST メソッドでかつ、フォームのバリデーションが通っていたら、if の中が実行されます。
+ここで求人を生成し、そのページにリダイレクトする処理を行います。
 
-初めてのテスト
---------------------------
+二日目のストーリーによれば求人は token によって識別されるとしました。
+token は求人作成時に自動的に発行されるようにしましょう。 `Jobeet::Schema::Result::Job` の 冒頭部に
 
-早速、Jobeet::Test を使ってアプリケーションのテストを書いていきたいところですが、テストスクリプトが意図せずに本番のデータベースにつながってしまったら問題です。安心のために、まずは Jobeet::Test のテストを書く事にしましょう。
-テストを書く事で Jobeet::Test がしっかりと動作している確証と、バグの無いコードを書いたという自信を得る事ができます。
+    use Digest::SHA1 qw/sha1_hex/;
+    use Data::UUID;
 
-ここで一つ注意しておく事があります。
-今回は、Jobeet::Test を書いた後にテストを書きますが、本来なら先にテストを書いた後に実装をする [-テスト駆動開発(TDD)-](http://ja.wikipedia.org/wiki/%E3%83%86%E3%82%B9%E3%83%88%E9%A7%86%E5%8B%95%E9%96%8B%E7%99%BA) をすべき所です。
+とし、insert メソッドに
 
-### Test::More
+    $self->token( sha1_hex(Data::UUID->new->create) );
 
-テストには `Test::More` モジュールを使用します。
-`Test::More` はとてもシンプルで扱いやすい、perlのテスト用モジュールです。
-`Test::More` はいくつかのテスト用関数を提供します。
-その中から特に良く使われる物をリストアップします:
+と言う処理を加えましょう。これで token は自動的にユニークが id がつけられます。コントローラに処理を追加しましょう：
 
-<table cellspacing="0" class="doc_table">
-<thead>
-<tr>
-  <th>メソッド</th>
-  <th>説明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td><code>ok($test)</code></td>
-  <td>条件をテストしてtrueであれば通る</td>
-</tr>
-<tr>
-  <td><code>is($value1, $value2)</code></td>
-  <td>2つの値を比較してそれらが等しい場合に通る</td>
-</tr>
-<tr>
-  <td><code>isnt($value1, $value2)</code></td>
-  <td>2つの値を比較しそれが等しくない場合に通る</td>
-</tr>
-<tr>
-  <td><code>like($string, $regexp)</code></td>
-  <td>文字列を正規表現でテストする</td>
-</tr>
-<tr>
-  <td><code>unlike($string, $regexp)</code></td>
-  <td>文字列が正規表現にマッチしないことをチェックする</td>
-</tr>
-<tr>
-  <td><code>is_deeply($array1, $array2)</code></td>
-  <td>2つの配列 or 連想配列が同じ値を持っていることをチェックする</td>
-</tr>
-</tbody>
-</table>
-
-
-### jobeet_test.t
-
-簡単な`Test::More` の説明が終わった所で、実際にテストを書いてみましょう。
-`Jobeet` プロジェクトのテストは、共通して次のモジュールを使います。以降、省略する部分もあります。
-
-    use strict;
-    use warnings;
-    use Test::More;
-
-    use Jobeet::Test;
-    use Jobeet::Models;
-
-`Jobeet::Test` が `use` された後に、設定ファイルのデータベース接続先がテスト様に作られた物になっているかを確かめます。
-`jobeet_test.t` を `t/` ディレクトリ以下に作成し、以下のスクリプトを書き込みます。
-
-    use strict;
-    use warnings;
-    use Test::More tests => 1;
-
-    use Jobeet::Test;
-    use Jobeet::Models;
-
-    like models('conf')->{database}[0], qr{dbi:SQLite:/.+jobeet-test-database\.db}, 'connect mock database after "use Jobeet::Test"';
-
-
-テストを実行する
---------------------------
-
-テストを実行するには prove コマンドを使います。
-
-prove コマンドは Test::Harness モジュールがインストールされていれば、既にあなたのマシンに入っています。
-
-大抵の環境で、既にインストールされていると思いますが、インストールされていない場合は、[一日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/01.html)に行ったように
-
-    $ sudo -H cpan
+    sub create :Local :Form('Jobeet::Form::Job') {
+        my ($self, $c) = @_;
     
-として cpan シェルを起動し
+        if ($c->req->method eq 'POST' and $self->form->submitted_and_valid) {
+            my $job = models('Schema::Job')->create_from_form($self->form);
+            $c->redirect( $c->uri_for('/job', $job->token) );
+        }
+    }
 
-    cpan> install Test::Harness
+リクエストメソッドが POST でかつフォームの内容が正しい場合にモデルの `create_from_form` に処理を渡しています。
+このコードを動作させるために ResultSet::Job に `create_from_form` メソッドを作成します：
+
+    use Jobeet::Models;
     
-を実行して、Test::Harness をインストールしましょう。
-
-
-prove コマンドには、よく使われるいくつかのオプションがあります:
-
-<table cellspacing="0" class="doc_table">
-<thead>
-<tr>
-  <th>オプション</th>
-  <th>説明</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td><code>-l</code></td>
-  <td>実行時にlibディレクトリをライブラリパスに加えます</td>
-</tr>
-<tr>
-  <td><code>-r</code></td>
-  <td>テストを再帰的に実行します</td>
-</tr>
-<tr>
-  <td><code>-v</code></td>
-  <td><code>出力を冗長にします</code></td>
-</tr>
-</tbody>
-</table>
-
-
-それでは、先程書いた jobeet_test.t を実行してみましょう!
-Jobeetプロジェクトのrootディレクトリに移動して、`prove -lr t/jobeet_test.t`を実行します。
-
-    $ prove -l t/jobeet_test.t
-
-    t/jobeet_test.t .. ok
-    All tests successful.
-    Files=1, Tests=1,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.51 cusr  0.06 csys =  0.60 CPU)
-    Result: PASS
-
-
-全てのテストが実行されて、緑色の文字があなたに全てのテストが pass した事を教えてくれます。
-
-
-このテストで、Jobeet::Test モジュールを使用するとデータベースの接続先がテスト用のdbになっている事を確認できました。
-これで安心してプロジェクトのテストを書いていく事ができます。
-
-Schema クラスのテストを書く
---------------------------
-
-テストを書くための下準備が終わったので、今までのチュートリアルに登場した順に沿ってテストを書いていく事にしましょう。
-
-### Jobeet::Schema::Result::Job
-
-[3日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/03.html)に登場した `Jobeet::Schema::Result::Job` のテストから書いていきます。
-
-
-基本的な所からテストを始める事が好ましいので、最初にデータの作成が正しく行われるかをテストすることにしましょう。
-
-新しい `category` を作成して、それに付随する `job` を作ります。
-
-新しくできた `job` は `Jobeet::Schema::Result::Job` オブジェクトであるべきなので、先程 `Test::More` の説明で出て来た `isa_ok` を使用して確認します。
-コードは次のようになります。
-
-    use strict;
-    use warnings;
-    use Test::More;
-
-    use Jobeet::Test;
-    use Jobeet::Models;
-
-    {
-        my $new_category = models('Schema::Category')->create({ name => 'Programming' });
-        my $new_job = $new_category->add_to_jobs({
-            type         => 'full-time',
-            company      => 'Sensio Labs',
-            logo         => 'sensio-labs.gif',
-            url          => 'http://www.sensiolabs.com/',
-            position     => 'Web Developer',
-            location     => 'Paris, France',
-            description  => q[You've already developed websites with symfony and you want to work with Open-Source technologies. You have a minimum of 3 years experience in web development with PHP or Java and you wish to participate to development of Web 2.0 sites using the best frameworks available.],
-            how_to_apply => 'Send your resume to fabien.potencier [at] sensio.com',
-            is_public    => 1,
-            is_activated => 1,
-            token        => 'job_sensio_labs',
-            email        => 'job@example.com',
+    sub create_from_form {
+        my ($self, $form) = @_;
+    
+        my $txn_guard = $self->result_source->schema->txn_scope_guard;
+    
+        my $category_id = delete $form->params->{category};
+        my $category = models('Schema::Category')->find($category_id)
+            or die 'no such category_id: ', $category_id;
+    
+        my $job = $self->create({
+            category_id => $category_id,
+            %{ $form->params },
         });
-
-        isa_ok $new_job, 'Jobeet::Schema::Result::Job';
+    
+        $txn_guard->commit;
+    
+        $job;
     }
 
-    done_testing;
+これで、フォームのバリデーションが成功し、求人の作成が完了すると redirect メソッドをつかって `/job/{token}` と言う求人情報のページへリダイレクトされるようになりました。
 
-それでは実行してみましょう。
+このページでは Job コントローラの show アクションが呼ばれます、このように定義してみましょう：
 
-    $ prove -l t/jobeet_schema_result_job.t
-
-    t/jobeet_schema_result_job.t .. ok
-    All tests successful.
-    Files=1, Tests=1,  2 wallclock secs ( 0.02 usr  0.01 sys +  0.55 cusr  0.07 csys =  0.65 CPU)
-    Result: PASS
-
-全てのテストをPASSしました。まだテストは1つしかありませんが、_All tests successful_の文字が誇らしいです。
-
-次に、正しく作成される事が確認できた`$new_job`に対して、その他のテストをしていきます。
-
-[3日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/03.html)で `Jobeet::Schema::ResultBase` に追加した、`created_at` や `updated_at` への日付の自動更新が、問題なく動作しているかのテストを追加しましょう。
-
-
-    isa_ok $new_job->created_at, 'DateTime';
-
-    isa_ok $new_job->updated_at, 'DateTime';
-
-[7日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/07.html)で `Jobeet::Schema::Result::Job` に追加した `expires_at`の日付の自動挿入も問題なく行われているかテストしましょう
-
-    isa_ok $new_job->expires_at, 'DateTime';
-
-それでは、実行してみます。
-
-    $ prove -l t/jobeet_schema_result_job.t
-
-    t/jobeet_schema_result_job.t .. ok
-    All tests successful.
-    Files=1, Tests=4,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.55 cusr  0.07 csys =  0.65 CPU)
-    Result: PASS
-
-おめでとうございます!! 全てのテストが通りました。
-良い区切りなので、testsの数が 4 だということを`Test::More`に教えてあげます。
-
-最終的に `jobeet_schema_result_job.t` は次のようになりました。
-
-    use strict;
-    use warnings;
-    use Test::More tests => 4;
-
-    use Jobeet::Test;
-    use Jobeet::Models;
-
-    {
-        my $new_category = models('Schema::Category')->create({ name => 'Programming' });
-        my $new_job = $new_category->add_to_jobs({
-            type         => 'full-time',
-            company      => 'Sensio Labs',
-            logo         => 'sensio-labs.gif',
-            url          => 'http://www.sensiolabs.com/',
-            position     => 'Web Developer',
-            location     => 'Paris, France',
-            description  => q[You've already developed websites with symfony and you want to work with Open-Source technologies. You have a minimum of 3 years experience in web development with PHP or Java and you wish to participate to development of Web 2.0 sites using the best frameworks available.],
-            how_to_apply => 'Send your resume to fabien.potencier [at] sensio.com',
-            is_public    => 1,
-            is_activated => 1,
-            token        => 'job_sensio_labs',
-            email        => 'job@example.com',
-        });
-
-        isa_ok $new_job, 'Jobeet::Schema::Result::Job';
-
-        isa_ok $new_job->created_at, 'DateTime';
-
-        isa_ok $new_job->updated_at, 'DateTime';
-
-        isa_ok $new_job->expires_at, 'DateTime';
+    sub show :Path :Args(1) {
+        my ($self, $c, $job_token) = @_;
+    
+        $c->stash->{job} = models('Schema::Job')->find({ token => $job_token })
+            or $c->detach('/default');
     }
 
+URLでうけとった token をもとに求人をさがし、みつかったら stash へ格納し、そうでなければ 404 ページへ処理を飛ばしています。
+求人情報のページのテンプレート `job/show.mt` も作成しておきましょう:
 
-    done_testing;
+    ? my $job = $c->stash->{job};
+    
+    ? extends 'common/base';
+    
+    ? block stylesheets => sub {
+    <link rel="stylesheet" type="text/css" href="<?= $c->uri_for('/css/main.css') ?>" />
+    <link rel="stylesheet" type="text/css" href="<?= $c->uri_for('/css/job.css') ?>" />
+    ? }
+    
+    ? block content => sub {
+    
+    <div id="job">
+      <h1><?= $job->company ?></h1>
+      <h2><?= $job->location ?></h2>
+      <h3>
+        <?= $job->category->name ?>    <small> - <?= $job->type ?></small>
+      </h3>
+    
+      <div class="description">
+        <?= $job->description ?>
+      </div>
+    
+      <h4>How to apply?</h4>
+    
+      <p class="how_to_apply"><?= $job->how_to_apply ?></p>
+    
+      <div class="meta">
+        <small>posted on <?= $job->created_at->ymd ?></small>
+      </div>
+    </div>
+    
+    ? } # endblock content
 
+この状態でフォームにアクセスし、なにか求人を作成してみてください。
+ただしくプレビュー画面が表示されましたか？
 
-### Jobeet::Schema::Result::Category
+この状態ではプレビューからさきへ進むことができません。編集や削除へのリンクを追加していきます。
+ここで、編集画面ではまた同じようなフォームをつくるでしょう。フォーム部分は `job/partial_form.mt` としてパーシャル化しておきましょう：
 
-続いて`Jobeet::Schema::Result::Category`のテストも行います。
+    ? my $form = shift;
+    
+    <form method="post">
+    <table id="job_form">
+      <tfoot>
+        <tr>
+          <td colspan="2">
+            <input type="submit" value="Preview your job" />
+          </td>
+        </tr>
+      </tfoot>
+      <tbody>
+    ? for my $field (qw/category type company url position location description how_to_apply email/) {
+        <tr>
+          <th><?= raw_string $form->label($field) ?></th>
+          <td>
+    ? if ($form->is_error($field)) {
+            <ul class="error_list">
+    ? for my $err (@{ $form->error_messages($field) }) {
+              <li><?= raw_string $err ?></li>
+    ? } # endfor $err
+            </ul>
+    ? } # endif
+            <?= raw_string $form->input($field) ?>
+          </td>
+        </tr>
+    ? } # endfor $field
+      </tbody>
+    </table>
+    </form>
 
-[8日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/08.html)で`slug`カラムを追加し、更新される度に自動的に更新されるようにしたのを覚えているでしょうか？
-幸いなことに、作業をした日からそれほど時間が経っていないので覚えていると思います。しかし、これが半年後だったらどうでしょうか？自信を持ってどのように自動更新されるかを説明できるでしょうか？
-あなたがアインシュタインもビックリの天才なら即答する事も可能かもしれませんが、大半の人はそうでないと思います。
+これを使用すると create.mt はこのようになるでしょう：
 
-あなた自身のために、そして将来このプロジェクトを引き継ぐかもしれない前途ある若者のために、テストを書くことにしましょう。
-テストを書いておけば、`DBIx::Class` に明るくない若者が、不本意に `Jobeet::Schema::Result::Category` の `insert` , `update` メソッドを書き換えてしまったとしても、テストが通らなくなるので間違いに気付くようになります。
-若者は喜び、`Jobeet`を利用しているユーザーはサービスが安定して動いてる事に満足を得てくれるでしょう。
+    ? my $form = $c->stash->{form};
+    
+    ? extends 'common/jobs_base';
+    
+    ? block content => sub {
+    
+    <h1>New Job</h1>
+    
+    ?= include('job/partial_form', $form);
+    
+    ? } # endblock content
 
-さあ、テストを書いていきましょう。
-`jobeet_schema_result_category.t` ファイルを作り、そこに `Jobeet::Schema::Result::Category` のテストを書いていきます。
+同様に編集用のテンプレート `job/edit.mt` はこのようになるでしょう：
 
-まず始めに、`insert` 時に `slug` カラムが適切に作られているかをテストします。
+    ? my $form = $c->stash->{form};
+    
+    ? extends 'common/jobs_base';
+    
+    ? block content => sub {
+    
+    <h1>Edit Job</h1>
+    
+    ?= include('job/partial_form', $form);
+    
+    ? } # endblock content
 
-    use strict;
-    use warnings;
-    use Test::More;
+それではつぎに編集用のコントローラを作成していきましょう：
 
-    use Jobeet::Test;
-    use Jobeet::Models;
-
-    {
-        my $new_category = models('Schema::Category')->create({
-            name => 'CamelCase',
-        });
-
-        is $new_category->slug, 'camel_case', 'slug column: create slug column automatically.';
+    sub job :Chained('/') :PathPart :CaptureArgs(1) {
+        my ($self, $c, $job_token) = @_;
+    
+        $c->stash->{job} = models('Schema::Job')->find({ token => $job_token })
+            or $c->detach('/default');
+    }
+    
+    sub edit :Chained('job') :PathPart :Form('Jobeet::Form::Job') {
+        my ($self, $c) = @_;
+    
+        my $job = $c->stash->{job};
+    
+        if ($c->req->method eq 'POST') {
+            if ($self->form->submitted_and_valid) {
+                $job->update_from_form($self->form);
+                $c->redirect( $c->uri_for('/job', $job->token) );
+            }
+        }
+        else {
+            $self->form->fill({
+                $job->get_columns,
+                category => $job->category->name,
+            });
+        }
     }
 
-    done_testing;
+はじめて Chained アクションを使用しています。ルーティングの日の内容を思い出してください。
+job アクションが URL の token パートをうけとり、それをもとに job が存在するかをチェックし、
+存在していれば stash 格納しています。見つからなかった場合 404 ページへ飛ばします。
 
-実行してみます。
+job が存在した場合処理は引き続き、edit アクションへと続きます。
+ここでは POST でかつフォームのエラーがない場合、Job を更新しています。
+POST メソッド以外のリクエストの場合はフォームをDBの内容で埋めています。これで編集画面を開いたときにはすでにフォームは現在の値で埋まっていると言うことになります。
 
-    $ prove -lr t/jobeet_schema_result_category.t
+削除のアクションは
 
-    t/jobeet_schema_result_category.t .. ok
-    All tests successful.
-    Files=1, Tests=1,  1 wallclock secs ( 0.03 usr  0.01 sys +  0.50 cusr  0.08 csys =  0.62 CPU)
-    Result: PASS
+    sub delete :Chained('job') :PathPart {
+        my ($self, $c) = @_;
+    
+        $c->stash->{job}->delete;
+        $c->redirect( $c->uri_for('/job') );
+    }
 
-問題ないですね。
+のようになります。このコントローラは求人を削除し求人トップへリダイレクトするという内容なのでテンプレートを持ちません。
 
-`update` 時に `slug` カラムが自動的に更新される動作のテストも追加します。
+それではプレビューページにこれら編集や削除へのリンクをつけましょう
 
-    $new_category->name('UpdatedCategoryName');
-    $new_category->update;
+    <div id="job_actions">
+      <h3>Admin</h3>
+      <ul>
+    ? if (!$job->is_activated) {
+          <li><a href="<?= $c->uri_for('/job', $job->token, 'edit') ?>">Edit</a></li>
+          <li><a href="<?= $c->uri_for('/job', $job->token, 'publish') ?>">Publish</a></li>
+    ? }
+        <li><a href="<?= $c->uri_for('/job', $job->token, 'delete') ?>" onclick="return confirm('Are you sure?')">Delete</a></li>
+    
+    ? if ($job->is_activated) {
+        <li<?= $job->expires_soon ? ' class="expires_soon"' : '' ?>>
+    ? if ($job->is_expired) {
+              Expired
+    ? } else {
+              Expires in <strong><?= $job->days_before_expired ?></strong> days
+    ? }
+    
+    ? if ($job->expires_soon) {
+             - <a href="">Extend</a> for another <?= Jobeet::Models->get('conf')->{active_days} ?> days
+    ? }
+          </li>
+    ? } else {
+          <li>
+            [Bookmark this <a href="<?= $c->req->uri ?>">URL</a> to manage this job in the future.]
+          </li>
+    ? }
+      </ul>
+    </div>
 
-    is $new_category->slug, 'updated_category_name', 'slug column: update slug column automatically';
+たくさんのコードがありますが、たいていのコードは簡単に理解できます。
 
-再度、実行してみます。
+テンプレートを読みやすくするために、Jobeet::Schema::Result::Job クラスに次のような一連のショートカットメソッドを追加しました:
 
-    $ prove -lr t/jobeet_schema_result_category.t
+    sub is_expired {
+        my ($self) = @_;
+        $self->days_before_expired < 0;
+    }
+    
+    sub days_before_expired {
+        my ($self) = @_;
+        ($self->expires_at - DateTime->now)->days;
+    }
+    
+    sub expires_soon {
+        my ($self) = @_;
+        $self->days_before_expired < 5;
+    }
 
-    #   Failed test 'slug column: update slug column automatically'
-    #   at t/jobeet_schema_result_category.t line 17.
-    #          got: 'camel_case'
-    #     expected: 'updated_category_name'
-    # Looks like you failed 1 test of 2.
-    t/jobeet_schema_result_category.t .. Dubious, test returned 1 (wstat 256, 0x100)
-    Failed 1/2 subtests
+管理バーには、求人のステータスに合わせて異なるアクションが表示されます:
 
-    Test Summary Report
-    -------------------
-    t/jobeet_schema_result_category.t (Wstat: 256 Tests: 2 Failed: 1)
-      Failed test:  2
-      Non-zero exit status: 1
-    Files=1, Tests=2,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.52 cusr  0.07 csys =  0.62 CPU)
-    Result: FAIL
-    exit 1
+![not activated](./images/10/not_activated.png)
 
-なんと、失敗してしまいました!
-テストを確認しましたが、テストが間違っている訳ではないようです。
-どうやらプログラムにバグがあり、期待通りの動作をしていないようです。
-しかし、テストが通らなかった事で悲観的になる必要はありません。これは非常に良い事です。テストを書く事によって既存のコードのバグを見つける事ができました。
-後は、このテストが `pass` するようにプログラムを修正するだけです。
+![activated](./images/10/activated.png)
 
-失敗しているテストから問題のある部分が想像できます。 おそらく `Jobeet::Schema::Result::Category` の `update` メソッド部分の実装に問題があるのでしょう。
-[8日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/08.html)の `slug カラムの追加` で追加した部分ですね。
 
-調査の結果、`name` カラムへの変更を `is_changed` でチェックしている処理に問題があることがわかったので、`is_column_changed` を使ったコードに修正しました。
+求人の有効化と公開
+---------------
 
-    sub update {
+前のセクションで、求人を公開するリンクがありましたがその機能はまだ作っていませんでした。Job コントローラに次のような publish アクションを作成しましょう。
+
+    sub publish :Chained('job') :PathPart {
+        my ($self, $c) = @_;
+    
+        my $job = $c->stash->{job};
+    
+        $job->publish;
+        $c->redirect( $c->uri_for('/job', $job->token) );
+    }
+
+そして Jobeet::Schema::Result::Job に publish メソッドを定義します
+
+    sub publish {
+        my ($self) = @_;
+        $self->update({ is_activated => 1 });
+    }
+
+これで、新しい公開機能をブラウザーでテストできます。
+
+しかし修正するものがまだあります。グローバルテンプレートの POST A JOB リンクが間違っています。ただしくリンクが機能するよう書き直しておきましょう。
+
+                <a href="<?= $c->uri_for('/job/create') ?>">Post a Job</a>
+
+また、有効化されていない求人情報はアクセスされてはなりません。つまり、Jobeet ホームページにこれらの求人情報は表示されてはならず、URL からアクセス可能であってはならないことです。 Criteria を有効な求人情報のみに制限する get_active_jobs メソッドをすでに作成したので、最後にこのメソッドを編集して新しい要件を追加します:
+
+    sub get_active_jobs {
         my $self = shift;
-
-        if ($self->is_column_changed('name')) {
-            $self->slug( decamelize $self->name );
-        }
-
-        $self->next::method(@_);
-    }
-
-テストを実行してみましょう。
-
-    $ prove -lr t/jobeet_schema_result_category.t
-
-    t/jobeet_schema_result_category.t .. ok
-    All tests successful.
-    Files=1, Tests=2,  1 wallclock secs ( 0.03 usr  0.00 sys +  0.55 cusr  0.08 csys =  0.66 CPU)
-    Result: PASS
-
-プログラムが正しく修正されたことで、全てのテストが成功するようになりました。
-1つのバグが修正され、さらにテストを書いた事により同じバグが再発する可能性も低い物となりました。
-
-最後にテストの数を`Test::More`に教えてあげます。
-
-最終的に `jobeet_schema_result_category.t` のコードは、次のようになりました。
-
-    use strict;
-    use warnings;
-    use Test::More tests => 2;
-
-    use Jobeet::Test;
-    use Jobeet::Models;
-
-    {
-        my $new_category = models('Schema::Category')->create({
-            name => 'CamelCase',
-        });
-
-        is $new_category->slug, 'camel_case', 'slug column: create slug column automatically';
-
-        $new_category->name('UpdatedCategoryName');
-        $new_category->update;
-
-        is $new_category->slug, 'updated_category_name', 'slug column: update slug column automatically';
-    }
-
-    done_testing;
-
-先程話題に上がった `is_column_changed` のドキュメントは [http://search.cpan.org/dist/DBIx-Class/lib/DBIx/Class/Row.pm#is_column_changed](http://search.cpan.org/dist/DBIx-Class/lib/DBIx/Class/Row.pm#is_column_changed) にあります。
-この章を読んだ後に余力があったら読んでみてください。
-
-続いて[7日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/07.html)で作成した`Jobeet::Schema::ResultSet::Category`のテストを書いて行きます。
-
-
-### Jobeet::Schema::ResultSet::Category
-
-
-`jobeet_schema_resultset_category.t`ファイルを作り、`Jobeet::Schema::ResultSet::Category`のテストを書いていきます。
-
-
-まずはテストに使うデータを作成します。
-
-    ## create test data
-    my $programming_category =
-        models('Schema::Category')->create({ name => 'Programming' });
-
-    my $programming_job = $programming_category->add_to_jobs({
-        type         => 'full-time',
-        company      => 'Sensio Labs',
-        logo         => 'sensio-labs.gif',
-        url          => 'http://www.sensiolabs.com/',
-        position     => 'Web Developer',
-        location     => 'Paris, France',
-        description  => q[You've already developed websites with symfony and you want to work with Open-Source technologies. You have a minimum of 3 years experience in web development with PHP or Java and you wish to participate to development of Web 2.0 sites using the best frameworks available.],
-        how_to_apply => 'Send your resume to fabien.potencier [at] sensio.com',
-        is_public    => 1,
-        is_activated => 1,
-        token        => 'job_sensio_labs',
-        email        => 'job@example.com',
-    });
-
-`get_with_jobs` メソッドが `Jobeet::Schema::ResultSet::Category` を返すかのテストをします。返り値の型をチェックする事は有用です。
-
-    isa_ok models('Schema::Category')->get_with_jobs, 'Jobeet::Schema::ResultSet::Category', 'get_with_jobs: returning "Jobeet::Schema::ResultSet::Category" object';
-
-`get_with_jobs` の返す `ResultSet` に `$programming_job` が含まれている筈なので、そのテストも追加しましょう。
-
-    my $first_job = models('Schema::Category')->get_with_jobs->first;
-    is $first_job->id, $programming_job->id, 'get_with_jobs: got $programming_job';
-
-[7日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/07.html)に実装した通り、`get_with_jobs`は少なくとも1つの利用可能な求人から全てのカテゴリを取得するメソッドです。
-言い換えると、期限が切れている`job`しかないカテゴリは習得しない、ということになります。
-期待通りの動作をするかテストしましょう。
-
-`DateTime` モジュールを使うのでコードの先頭に `use DateTime;` を追加してください。
-
-    my $yesterday = DateTime->now->subtract( days => 1 );
-
-    # Now, $programming_job expires
-    $programming_job->update({ expires_at => $yesterday });
-
-    is models('Schema::Category')->get_with_jobs->count, 0, 'get_with_jobs: expired job is not appeared';
-
-テストを実行します。
-
-    prove -l t/jobeet_schema_resultset_category.t
-
-    t/jobeet_schema_resultset_category.t .. ok
-    All tests successful.
-    Files=1, Tests=3,  1 wallclock secs ( 0.02 usr  0.00 sys +  0.55 cusr  0.07 csys =  0.64 CPU)
-    Result: PASS
-
-全てのテストが成功しました。
-`Jobeet::Schema::ResultSet::Category` のテストは完了としましょう。
-
-テストの数を `Test::More` に教えてあげます。
-`jobeet_schema_resultset_category.t` の全コードは、次のようになりました。
-
-    use strict;
-    use warnings;
-    use Test::More tests => 3;
+        my $attr = shift || {};
     
-    use Jobeet::Test;
-    use Jobeet::Models;
-    use DateTime;
-    
-    {
-        ## create test data
-        my $programming_category =
-            models('Schema::Category')->create({ name => 'Programming' });
-            
-        my $programming_job = $programming_category->add_to_jobs({
-            type         => 'full-time',
-            company      => 'Sensio Labs',
-            logo         => 'sensio-labs.gif',
-            url          => 'http://www.sensiolabs.com/',
-            position     => 'Web Developer',
-            location     => 'Paris, France',
-            description  => q[You've already developed websites with symfony and you want to work with Open-Source technologies. You have a minimum of 3 years experience in web development with PHP or Java and you wish to participate to development of Web 2.0 sites using the best frameworks available.],
-            how_to_apply => 'Send your resume to fabien.potencier [at] sensio.com',
-            is_public    => 1,
-            is_activated => 1,
-            token        => 'job_sensio_labs',
-            email        => 'job@example.com',
-        });
-        
-        ## do test
-        {
-            isa_ok models('Schema::Category')->get_with_jobs, 'Jobeet::Schema::ResultSet::Category', 'get_with_jobs: returning "Jobeet::Schema::ResultSet::Category" object';
-        }
-        
-        {
-            my $first_job = models('Schema::Category')->get_with_jobs->first;
-            
-            is $first_job->id, $programming_job->id, 'get_with_jobs: got $programming_job';
-        }
-        
-        {
-            my $yesterday = DateTime->now->subtract( days => 1 );
-    
-            # Now, $programming_job expires
-            $programming_job->update({ expires_at => $yesterday });
-    
-            is models('Schema::Category')->get_with_jobs->count, 0, 'get_with_jobs: expired job is not appeared';
-        }
-    }
-    
-    done_testing;
-
-### Jobeet::Schema::Result::Category 再び
-
-[7日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/07.html)で、カテゴリResultオブジェクトにアクティブな求人を返す `get_active_jobs` メソッドを追加しました。
-
-`get_active_jobs` に期待する振る舞いは次のようになります:
-
-- 期限切れでない`job`のみを返す
-- 作成日時(`created_at`)で降順にソートされている
-- 第一引数で取得する行数を指定できる
-
-それでは上の項目が満たされているかのテストを、`jobeet_schema_result_category.t` に追加していきましょう。
-
-まずはテスト用のデータを作ります。別ファイルにする方法もありますが、今回のようにユニットテストの場合はテスト用のデータがソース中に含まれている方が理解が容易なのでそうします。
-
-`$design_job_1` , `$design_job_2` , `$design_job_3` と3つの `Design` カテゴリーの `job` を作ります。
-
-
-    my $job_rs = models('Schema::Job');
-
-    ## create test data
-    my $design_category = models('Schema::Category')->create({ name => 'Design' });
-
-    my $design_job_1 = $job_rs->create({
-        category_id  => $design_category->id,
-        company      => "Company 1",
-        position     => 'Web Designer',
-        location     => 'Paris, France',
-        description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
-        how_to_apply => "Send your resume to lorem.ipsum [at] company_1.sit",
-        is_public    => 1,
-        is_activated => 1,
-        token        => "job_1",
-        email        => 'job@example.com',
-    });
-
-    my $design_job_2 = $job_rs->create({
-        category_id  => $design_category->id,
-        company      => "Company 2",
-        position     => 'Web Designer',
-        location     => 'Paris, France',
-        description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
-        how_to_apply => "Send your resume to lorem.ipsum [at] company_2.sit",
-        is_public    => 2,
-        is_activated => 2,
-        token        => "job_2",
-        email        => 'job@example.com',
-    });
-
-    my $design_job_3 = $job_rs->create({
-        category_id  => $design_category->id,
-        company      => "Company 3",
-        position     => 'Web Designer',
-        location     => 'Paris, France',
-        description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
-        how_to_apply => "Send your resume to lorem.ipsum [at] company_3.sit",
-        is_public    => 3,
-        is_activated => 3,
-        token        => "job_3",
-        email        => 'job@example.com',
-    });
-
-今回のテストから、説明文字列に日本語を使用する事にします。
-`Jobeet`ではutf-8でプログラムを書いているので、説明文字列に日本語を使用するために `use utf8;` と `binmode(Test::More->builder->$_, ':utf8') for qw/failure_output output todo_output/;` をテストに追加します。
-
-よってテストの上部は
-
-    use strict;
-    use warnings;
-    use utf8;
-    use Test::More tests => 2;
-
-    use Jobeet::Test;
-    use Jobeet::Models;
-
-    binmode(Test::More->builder->$_, ':utf8') for qw/failure_output output todo_output/;
-
-になります。
-
-
-それでは、日本語を使いつつ *期限切れでない job のみを返す* の部分のテストをしましょう。
-
-3つの `job` を登録したので、 `$design_category->get_active_jobs->count` は3を返す筈です。
-
-    is $design_category->get_active_jobs->count, 3, 'get_active_jobs: 3つ登録したjobの習得';
-
-`$design_job_2` の `expires_at` を昨日に設定すると期限切れになるので `$design_category->get_active_jobs` の返す結果セットには含まれなくなり `$design_category->get_active_jobs->count` は2を返す筈です。
-
-    my $yesterday = DateTime->now->subtract( days => 1 );
-    $design_job_2->update({ expires_at => $yesterday });
-
-    is $design_category->get_active_jobs->count, 2, 'get_active_jobs: $design_job_2 が期限切れになったので get_active_jobs の返り値に含まれなくなった';
-
-
-次は、 *作成日時(created\_at)で降順にソートされている* のテストです。
-
-`$design_job_1` の `作成日時` を現在に、`$design_job_3` の `作成日時` を一時間前に設定します。
-この状態で `$design_category->get_active_jobs->first` を実行すると、時間軸で後に作られた `$design_job_1` が返ってくる筈です。
-
-    my $now = DateTime->now;
-    my $one_hour_ago = $now->clone->subtract( hours => 1);
-    my $tomorrow = $now->clone->add( days => 1 );
-
-    $design_job_1->update({ created_at  => $now });
-    $design_job_3->update({ created_at  => $one_hour_ago });
-
-    {
-        my $first_job = $design_category->get_active_jobs->first;
-        is $first_job->id, $design_job_1->id, 'get_active_jobs: $design_job_1が今、$design_job_3が1時間前に作られたので、$design_category->get_active_jobs->first は $design_job_1';
-    }
-
-`$design_job_3` の `作成日時` を一日後にした場合は `$design_category->get_active_jobs->first` が `$design_job_3` を返す筈です。
-
-    $design_job_3->update({ created_at => $tomorrow });
-    {
-        my $first_job = $design_category->get_active_jobs->first;
-        is $first_job->id, $design_job_3->id, 'get_active_jobs: $design_job_3 が $design_job_1 より後に作られた事になったので、$design_category->get_active_jobs->first は $design_job_3';
-    }
-
-
-最後に _第一引数で取得する行数を指定できる_ のテストをします。
-
-    {
-        is $design_category->get_active_jobs->count, 2, 'get_active_jobs: $design_categoryのアクティブなjobは2つ';
-        is $design_category->get_active_jobs({ rows => 1 })->count, 1, 'get_active_jobs: rowsパラメータで 1 を指定したので 1つだけ習得';
-    }
-
-テスト数が増えたので、`Test::More` に数を教えてあげましょう。`use Test::More tests => 8;` に変更します。
-
-最終的に `jobeet_schema_result_category.t` の全コードは次のようになりました。
-
-    use strict;
-    use warnings;
-    use utf8;
-    use Test::More tests => 8;
-    
-    use Jobeet::Test;
-    use Jobeet::Models;
-    use DateTime;
-    
-    binmode(Test::More->builder->$_, ':utf8') for qw/failure_output output todo_output/;
-    
-    {
-        my $new_category = models('Schema::Category')->create({
-            name => 'CamelCase',
-        });
-    
-        is $new_category->slug, 'camel_case', 'slug column: create slug column automatically';
-    
-        $new_category->name('UpdatedCategoryName');
-        $new_category->update;
-    
-        is $new_category->slug, 'updated_category_name', 'slug column: update slug column automatically';
-    }
-    
-    
-    {
-        my $job_rs = models('Schema::Job');
-    
-        ## create test data
-        my $design_category = models('Schema::Category')->create({ name => 'Design' });
-        
-        my $design_job_1 = $job_rs->create({
-            category_id  => $design_category->id,
-            company      => "Company 1",
-            position     => 'Web Designer',
-            location     => 'Paris, France',
-            description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
-            how_to_apply => "Send your resume to lorem.ipsum [at] company_1.sit",
-            is_public    => 1,
-            is_activated => 1,
-            token        => "job_1",
-            email        => 'job@example.com',
-        });
-    
-        my $design_job_2 = $job_rs->create({
-            category_id  => $design_category->id,
-            company      => "Company 2",
-            position     => 'Web Designer',
-            location     => 'Paris, France',
-            description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
-            how_to_apply => "Send your resume to lorem.ipsum [at] company_2.sit",
-            is_public    => 2,
-            is_activated => 2,
-            token        => "job_2",
-            email        => 'job@example.com',
-        });
-    
-        my $design_job_3 = $job_rs->create({
-            category_id  => $design_category->id,
-            company      => "Company 3",
-            position     => 'Web Designer',
-            location     => 'Paris, France',
-            description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
-            how_to_apply => "Send your resume to lorem.ipsum [at] company_3.sit",
-            is_public    => 3,
-            is_activated => 3,
-            token        => "job_3",
-            email        => 'job@example.com',
-        });
-    
-        ## do testing
-        is $design_category->get_active_jobs->count, 3, 'get_active_jobs: 3つ登録したjobの習得';
-    
-        {
-            my $yesterday = DateTime->now->subtract( days => 1 );
-            $design_job_2->update({ expires_at => $yesterday });
-    
-            is $design_category->get_active_jobs->count, 2, 'get_active_jobs: $design_job_2 が期限切れになったので get_active_jobs の返り値に含まれなくなった';
-        }
-    
-        {
-            my $now = DateTime->now;
-            my $one_hour_ago = $now->clone->subtract( hours => 1);
-            my $tomorrow = $now->clone->add( days => 1 );
-    
-            $design_job_1->update({ created_at  => $now });
-            $design_job_3->update({ created_at  => $one_hour_ago });
-    
-            {
-                my $first_job = $design_category->get_active_jobs->first;
-                is $first_job->id, $design_job_1->id, 'get_active_jobs: $design_job_1が今、$design_job_3が1時間前に作られたので、$design_category->get_active_jobs->first は $design_job_1';
+        $self->jobs(
+            { expires_at => { '>=', DateTime->now }, is_activated => 1 },
+            {   order_by => { -desc => 'created_at' },
+                defined $attr->{rows} ? ( rows => $attr->{rows} ) : (),
+                defined $attr->{page} ? ( page => $attr->{page} ) : (),
             }
-            
-            $design_job_3->update({ created_at => $tomorrow });
-    
-            {
-                my $first_job = $design_category->get_active_jobs->first;
-                is $first_job->id, $design_job_3->id, 'get_active_jobs: $design_job_3 が $design_job_1 より後に作られた事になったので、$design_category->get_active_jobs->first は $design_job_3';
-            }
-            
-        }
-    
-        {
-            is $design_category->get_active_jobs->count, 2, 'get_active_jobs: $design_categoryのアクティブなjobは2つ';
-    
-            is $design_category->get_active_jobs({ rows => 1 })->count, 1, 'get_active_jobs: rowsパラメータで 1 を指定したので 1つだけ習得';
-        }
-     }
-    
-    done_testing;
+        );
+    }
 
-それでは実行してみましょう。
+これでお終いです。ブラウザーでテストしてみましょう。すべての有効ではない求人はホームページから消えました; それらのURLを知っていても、もはやアクセスできません。しかしながら、これらは求人のトークンURLを知っていればアクセスできます。この場合、求人のプレビューは管理バーつきで表示されます。
 
-    $ prove -l t/jobeet_schema_result_category.t
-
-    t/jobeet_schema_result_category.t .. ok
-    All tests successful.
-    Files=1, Tests=8,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.58 cusr  0.07 csys =  0.68 CPU)
-    Result: PASS
-
-全てのテストが成功して、緑色の文字列があなたを祝福してくれました。
-あなたのアプリケーションは確実に堅守な物になりました。素晴らしいです。
-
-全てのテストを実行する
---------------------------
-
-今日頑張ってテストを書いたので、`t/` ディレクトリの下には
-
-- 00\_compile\.t
-- jobeet\_schema\_result_category\.t
-- jobeet\_schema\_result\_job\.t
-- jobeet\_schema\_resultset\_category\.t
-- jobeet\_test\.t
-
-の5つのテストがある状態になりました。
-全てのテストが成功し、プロジェクトが健全な状態にあるか確かめましょう。
-
-`prove` コマンドに `t` ディレクトリを引数として実行するとディレクトリ以下のテストを全て実行する事ができます。
-今回は使っていませんが、サブディレクトリにあるテストも実行させる場合には、先程説明した `-r` オプションを使用します。
-
-    $ prove -l t
-
-    ...
-
-    All tests successful.
-    Files=5, Tests=17,  3 wallclock secs ( 0.04 usr  0.02 sys +  2.34 cusr  0.34 csys =  2.74 CPU)
-    Result: PASS
-
-全てのテストを `pass` した事を確認したので、今日はここまでにしましょう。
+これまでのところ、これがMVCパターンとリファクタリングの大きな利点の1つです。新しい要件を追加するために1つのメソッドで1つの変更だけが必要でした。
 
 また明日
---------------------------
+------
 
-アプリケーションのテストが簡単でなくても、今日のチュートリアルをスキップしたい方がいらっしゃるのはわかります。取り組んでいただけば幸いです。
+今日のチュートリアルにはたくさんの新しい情報が詰め込まれていましたが、symfonyのフォームフレームワークをより理解していただけることを願っています。
 
-Arkを受け入れることはArkが提供するすばらしい機能すべてを学ぶことだけでなく、Arkが提唱する開発の~哲学~と~ベストプラクティス~でもあります。テストはそれらの1つです。遅かれ早かれ、ユニットテストは時間の節約になります。これらはコードへの確固たる信頼と恐れずにリファクタリングできる自由を与えてくれます。ユニットテストは何かが壊れているときに警告してくれる安全な護衛です。
+明日からはプログラミングで最も重要なテストについて学びはじめます。
 
-明日はjobとcategoryモジュール用の機能テストを書きます。それまでは、Jobeetモデルクラス用のユニットテストをさらに書くための時間をとってください。
