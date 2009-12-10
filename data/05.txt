@@ -1,315 +1,349 @@
-ルーティング
+モデル、ビュー、コントローラ
 
-4日目を完璧にこなしているなら、MVCパターンに慣れてきて、コーディング方法がより自然に感じるようになっていることでしょう。もっと時間をかけて学ぶことで、振り返らないようになるでしょう。
+昨日までで DBIx::Class を使用したデータベースのつかい方、またそのクラスを Ark から使用する方法を学びました。
+そしてそれを用いて Jobeet のデータベーススキーマを記述したりテーブルを作成したり初期データをデータベースに投入したりしました。
 
-今日は、 Ark のルーティングフレームワークのすばらしい世界に飛び込みましょう。
+今日は昨日作ったデータベースを元に Job 周りのモジュールを作ってきます。これらは複数のファイルから構成され、以下の機能を持ちます：
 
-URL
-------
+ * 求人の一覧ページ
+ * 新しく求人を投稿するページ
+ * 投稿した求人を更新するページ
+ * 求人を削除するページ
 
-Jobeetホームページ上の求人情報をクリックすると、URLは/job/1のように表示されます。もしPHPでWebサイトの開発をしたことがあるなら、おそらく/job.php?id=1というURLを見慣れているでしょう。 Ark はどうやって動作しているのでしょうか？ Ark はどうやってこのURLを基本とするアクションを決めているのでしょうか？なぜ求人のidは`my ($self, $c, $id) = @_;`で取得できるのでしょうか？今日は、これら全ての問題の答えを見てゆきます。
+MVC アーキテクチャ
+----------------
 
-しかしまず初めに、URLとURLが正確に指すものについて話します。 Webコンテキスト上で、URLはWebリソースの一意的な名前です。 URL先へ行くと、ブラウザーにURLによって分類されているリソースを取得するように頼みます。そしてURLはWebサイトとユーザー間のインターフェイスとして、リソースが参照している意味のある情報を伝えます。しかし旧来のURLは実際にはリソースについての説明をしておらず、アプリケーションの内部構造を公開してしまっています。ユーザーはWebサイトがPerlで開発されているとか、求人情報が持つデータベースのある識別子というようなことはあまり気にしません。アプリケーションの内部動作を公開することは~セキュリティ~の観点から見ても、非常にまずいです。ユーザーがURL先にアクセスすることなくリソースを予想することができたらどうだろうか？開発者は適切な方法でアプリをセキュアすべきで、機密情報は隠したほうがよいです。 URLはArkでフレームワーク全体を管理するのに重要なものです。これは~ルーティング~(routing)フレームワークで管理します。
+Web 開発の分野では近年コーディングのための最適解として認識されているのは MVC デザインパターンです。
+手短に言えば、MVC デザインパターンはコードの性質ごとに体系化する方法を定義しています。このパターンは**3つのレイヤー**に分けられます。
 
-Arkの基本的的なルーティング
----------
+ * *Model* レイヤーはアプリケーションロジックに相当します。
+ * *View* はレンダリングを担当します。
+ * *Controller* はユーザーのリクエストを受け取りそれをもとに Model や View に処理を投げる、いわばディスパッチャーを担当します。
 
-Arkのルーティングは、SymfonyやRuby on Railsのように、一つの設定ファイルにまとめて記述するような方式ではありません。Arkではコントローラーメソッドの定義がそのままルーティングの役割を果たします。コントローラーのメソッドにアトリビュートを付加することにより、様々なURLを表現することができます。
+![MVC](./images/05/mvc.png)
 
-代表的なアトリビュートは以下の3つです。
+MVC パターンをはじめたばかりの初心者によくある間違いとして、コントローラにロジックを書いてしまう、と言う物があります。コントローラはあくまで *HTTPからの入力* をうけとって何かをするものですので、コントローラにロジックを書いてしまうとそのロジックは HTTP 経由でしか実行できなくなってしまいます。ロジックはすべてモデルに定義し再利用性のたかいコードを書くよう気をつけましょう。
 
-* Path
-* Regex
-* Chained
 
-### Path
+ビューの準備
+----------
 
-PathアトリビュートにマッチさせたいURLを記述します。
+レンダリングを担当する View クラスは Jobeet::View:: 以下に定義します。
+テンプレートや JSON データなどほとんどのデータ形式の場合 Ark 自体が View クラスを用意しているので、アプリケーションではそれを継承するクラスを用意するだけでビューの機能を使用することが出来るようになっています。
 
-パッケージ名がFooの場合はfooからのパスになります。以下の例では/foo/barというURLにマッチします。
+とりあえずテンプレートに対応する View を作成してみましょう。Ark ではデフォルトでいくつかのテンプレートエンジンに対応していますが、このチュートリアルでは Text::Microtemplate のビューを使用します。
+以下のコマンドを実行してください。
 
-    package SampleApp::Controller::Foo;
-    use Ark 'Controller';
+    $ ark.pl view MT View::MT
 
-    # /foo/bar
-    sub bar :Path('bar') {
+これで Ark::View::MT を継承した Jobeet::View::MT クラスが自動的に作成されます。
+
+そしてコントローラ内で
+
+    $c->forward( $c->view('MT') );
+
+としてこの作成したビューに処理を配送することでテンプレートのレンダリングが行われます。Jobeet::Controller::Root に以下の定義を付け加えてください。
+
+    sub end :Private {
         my ($self, $c) = @_;
-    }
-
-このとき、メソッド名は関係ありません。以下も/foo/barにマッチします。
-
-    package SampleApp::Controller::Foo;
-    use Ark 'Controller';
-
-    # /foo/bar
-    sub hoge :Path('bar') {
-        my ($self, $c) = @_;
-    }
-
-
-Pathに何も指定しないとそのpackageのルートになります。これは/fooにマッチします。
-
-    package SampleApp::Controller::Foo;
-    use Ark 'Controller';
-
-    # /foo
-    sub index :Path {
-        my ($self, $c) = @_;
-    }
-
-Rootコントローラーを書く場合は下記の様にnamespaceを空にします。
-
-    has '+namespace' => default => '';
-
-これは/aboutにマッチします。
-
-    package SampleApp::Controller::Root;
-    use Ark 'Controller';
-
-    has '+namespace' => default => '';
-
-    # /about
-    sub about :Path('about') {
-        my ($self, $c) = @_;
-    }
-
-これは/（トップ）にマッチします。
-
-    package SampleApp::Controller::Root;
-    use Ark 'Controller';
-
-    has '+namespace' => default => '';
-
-    # /
-    sub index :Path {
-        my ($self, $c) = @_;
-    }
-
-Pathの中を絶対パスで書くと絶対パスでマッチするのでpackage名も関係なくなります。これは/hoge/fugaにマッチします。
-
-    package SampleApp::Controller::Foo;
-    use Ark 'Controller';
-
-    # /hoge/fuga
-    sub bar :Path('/hoge/fuga') {
-        my ($self, $c) = @_;
-    }
-
-#### Args 
-
-Argsを指定することでURLからパラメータを取得できます。Argsに受け取る数を指定します。
-
-これは`/foo/*`にマッチします。
-
-    package SampleApp::Controller::Foo;
-    use Ark 'Controller';
-
-    # /foo/*
-    sub index :Path :Args(1) {
-        my ($self, $c, $args) = @_;
-    }
-
-下記の例では`/*`と`/*/**`にマッチして`/*`はindex1、`/*/*`はindex2のメソッドを実行します。
-
-    package SampleApp::Controller:Root;
-    use Ark 'Controller';
-
-    has '+namespace' => default => '';
-
-    # /*
-    sub index1 :Path :Args(1) {
-        my ($self, $c, $args) = @_;
-    }
-
-    # /*/*
-    sub index2 :Path :Args(2) {
-        my ($self, $c, $args1, $args2) = @_;
-    }
-
-
-Argsに何も指定しないと`/*/*/*/*...`のように、すべてにマッチするので、通常Rootコンローラーにこれを置いて404のページに使います。
-
-    package SampleApp::Controller:Root;
-    use Ark 'Controller';
-
-    has '+namespace' => default => '';
-
-    sub default :Path :Args {
-        my ($self, $c) = @_;
-        # 404
-    }
-
-
-#### Local
-
-Localアトリビュートはメソッド名にマッチします。
-
-    sub foo :Path('about') {
-    }
-
-と
-
-    sub about :Local {
-    }
-
-は同じ意味になります。
-
-#### Global
-
-メソッド名がトップレベルになります。
-
-    sub foo :Path('/about') {
-    }
-
-と
-
-    sub about :Global {
-    }
-
-は同じになります。
-
-### Regex
-
-正規表現でマッチします。パッケージ名やメソッド名は関係ありません。
-
-    sub hoge :Regex('^/article//(\d{4})/(\d{2})/(\d{2})') {
-        my ($self, $c, $year, $month, $day) = @_;
-    }
-
-これでRegexに指定したURLにマッチします。正規表現の()の中の値を引数として受け取ることができます。
     
-### Chained
-
-/job/{job_id}/edit のような複雑なURLを使いたい場合はChainedを使います。
-
-    sub job :Chained('/') :PathPart :CaptureArgs(1) {
-        my ($self, $c, $job_id) = @_;
-        $c->stash->{job_id} = $job_id;
+        unless ($c->res->body or $c->res->status =~ /^3\d\d/) {
+            $c->forward( $c->view('MT') );
+        }
     }
 
-    # /job/{job_id}/edit
-    sub job_edit :Chained('job') :PathPart('edit') {
-        my ($self, $c) = @_;
-    }
+end アクションはコントローラの実行の最後に実行される特別なアクションで、これはレスポンスがまだ定義されていない場合、MT ビューに処理を配送すると言う処理を行っています。
+そのほかのコントローラの詳細については明日学習しましょう。
 
-このとき、PathPartの値を省略するとメソッド名がPathPartの値になります。例えば、job_editメソッドは以下のように書くのと同じです。
 
-    # /job/{job_id}/edit
-    sub edit :Chained('job') :PathPart :Args(0) {
-        my ($self, $c) = @_;
-    }
+Job ロジックの作成
+----------------
 
-Rootコントローラー
------------------
+### Ark モデル
 
-それでは実際にJobeetのコントローラーを書いていきましょう。実はプロジェクトをつくった時点で、トップページと404のアクションはすでに定義されています。
+ロジックはモデルに定義するのでしたね。昨日あいまいにしてしまった Ark モデルの仕組みを先に学んでおきましょう。
 
-lib/Jobeet/Controller/Root.pmというファイルが自動で作成されており、内容は以下の用になっています。
+Ark が提供するのはモデル自体ではなく Perl モジュールの入れ物です。
+昨日 Jobeet::Schema とその各 ResultSet クラスを Jobeet::Models に登録したのを覚えているでしょうか？ Ark では普通の Perl のモジュールをモデルとして使用します。
+こうすることで膨大な数の CPAN モジュールを再利用できるという利点があります。
 
-    package Jobeet::Controller::Root;
-    use Ark 'Controller';
+#### 基本的な使い方
 
-    has '+namespace' => default => '';
+アプリケーションごとにモデルの入れ物を定義します。定義は昨日したような：
 
-    # default 404 handler
-    sub default :Path :Args {
-        my ($self, $c) = @_;
-
-        $c->res->status(404);
-        $c->res->body('404 Not Found');
-    }
-
-    sub index :Path :Args(0) {
-        my ($self, $c) = @_;
-        $c->res->body('Ark Default Index');
-    }
-
+    package Jobeet::Models;
+    use strict;
+    use warnings;
+    use Ark::Models '-base';
+    
     1;
 
-Rootコントローラーのアクションはこれでいいでしょう。
+というような `use Ark::Models '-base';` を書いたクラスを一つ用意します。これがこのアプリケーションのモデルクラスとなります。ここに
 
-Jobコントローラー
------------------
+    register モデル名 => sub {
+        初期化処理、最後にこのモデルのオブジェクトを返す
+    };
 
-次にJobのコントローラーを作ります。Jobで必要なページは以下のものです。
+と言う書式でモデルを登録します。
 
-* jobトップ
-* 詳細
-* 新規作成
-* 編集
-* 削除
+この登録したモデルを使用するときは、
 
-これらを定義するためにlib/Jobeet/Controller/Job.pmというファイルを作成し、下記のように書きます。
+    use Jobeet::Models;
+
+としてから
+
+    my $obj = models('Schema');
+    my $obj = models->get('Schema');
+    my $obj = Jobeet::Schema->get('Schema');
+
+などとすると引数で渡した名前（ここではSchema）のモデルクラスを取得できます。
+
+#### Ark モデルを使用する利点
+
+Perl モジュールをモデルとして使用するなら、直接そのモジュールを Ark から使用すればいいのでは？ と思うかもしれません。
+しかし Ark モデルは以下の機能を提供します。
+
+ * 遅延ロード
+ * config との連動
+ * 依存性の解決
+
+
+#### 遅延ロード
+
+register でモデルを登録しても実際には初期化処理は走りません。
+Ark モデルではモデルを実際に使用するときに初めて初期化処理がされます。したがって、必要のない機能は register してあっても使用されず、効率的にメモリを使用することが出来、またその分高速に動作します。
+
+#### configとの連動
+
+`Ark::Models` にはデフォルトで定義されている二つのモデル（home, conf）があります。これらはそれぞれ：
+
+ * conf - config.pl のパース結果オブジェクト
+ * home - アプリケーションホームディレクトリ
+
+を表します。昨日の Schema 定義の中で
+
+    $self->get('conf');
+
+と言う書式で設定ファイルを参照していたのはこの機能をつかっていたのでした。
+
+#### 依存性の解決
+
+初期化処理の中で get メソッドを使用してほかのモデルに依存することが出来ます。昨日の Schema の例を見てみましょう。
+
+    register Schema => sub {
+        my $self = shift;
+    
+        my $conf = $self->get('conf')->{database};
+        Jobeet::Schema->connect(@{ $conf });
+    };
+    
+    register 'Schema::Job' => sub {
+        my $self = shift;
+        $self->get('Schema')->resultset('Job');
+    };
+
+この定義では `Schema::Job` の中では `get('Schema')` していますし、`Schema` の中では `get('conf')` していますね。
+これらは get するときに初期化されると最初に言いました。つまりどこで `models('Schema::Job')` とした瞬間に、
+
+ * conf が初期化され（configがロードされ）
+ * Schema が初期化され
+ * その結果を用いて Schema::User が返る
+
+という処理で Schema::User のオブジェクトを取得することが出来ます。もちろんすでに初期化されたオブジェクトはキャッシュされるので初期化処理が何回も行われてしまうと言うことはありません。
+
+Arkモデルを使用すると、このようにことで必要なものだけ初期化したり依存性のある複雑なモジュール間の連携を行うことができます。
+
+#### Job ロジック
+
+最初に上げた Job 周りのロジックをもう一度見てみましょう。
+
+ * 求人の一覧ページ
+ * 新しく求人を投稿するページ
+ * 投稿した求人を更新するページ
+ * 求人を削除するページ
+
+これをみるかぎり、ほとんどデータベース処理と各ページの機能は一致しています。
+したがってJobロジックは定義せず、昨日定義した ORM クラスさえあれば事足りそうです。Job のロジックとしては `Schema::Job` モデルを使用していきましょう。
+
+
+コントローラ
+----------
+
+コントローラはユーザーのリクエストを受け（HTTPリクエスト）View や Model に処理を配送するものだと言いました。
+つまり、Ark では URL はコントローラで作成します。
+
+Job 用のコントローラ（URL）を作成しましょう。ただし、まだフォームについて学習していないので今日はジョブの一覧ページだけを作成しましょう。
+
+    /job/
+
+にアクセスすると job 一覧が表示されるようにしてみましょう。Jobeet::Controller::Job と言う名前で以下のような Job コントローラを作成しましょう。
 
     package Jobeet::Controller::Job;
     use Ark 'Controller';
-
-    # /job （jobトップ）
-    sub index :Path :Args(0) {
+    
+    use Jobeet::Models;
+    
+    sub index :Path {
         my ($self, $c) = @_;
+    
+        $c->stash->{jobs} = models('Schema::Job');
     }
-
-    # /job/{job_id} （詳細）
-    sub show :Path :Args(1) {
-        my ($self, $c, $job_id) = @_;
-    }
-
-    # /job/create （新規作成）
-    sub create :Local :Args(0) {
-        my ($self, $c) = @_;
-    }
-
-    sub job :Chained('/') :PathPart :CaptureArgs(1) {
-        my ($self, $c, $job_id) = @_;
-        $c->stash->{job_id} = $job_id;
-    }
-
-    # /job/{job_id}/edit （編集）
-    sub edit :Chained('job') :PathPart :Args(0) {
-        my ($self, $c) = @_;
-    }
-
-    # /job/{job_id}/delete （削除）
-    sub delete :Chained('job') :PathPart :Args(0) {
-        my ($self, $c) = @_;
-    }
-
+    
     1;
 
+コントローラとURLのマッピング（ルーティング）は明日詳しく学習しますが、このコントローラの index 関数は `/job/` にリクエストが来たとき実行されます。
+そしてここでは `stash->{jobs}` に Job 一覧を格納しています。
+stash とはグローバルな変数の入れ物であり、コントローラとビューの間で変数を共有するのに使われます。つまりこの場合 jobs と言うデータをビューで使えるようにしていると解釈してもらってかまいません。
 
-確認する
--------------------
+テンプレートの定義
+---------------
 
-ここまでできたら一度サーバーをデバッグモードで起動してみましょう。
+さて、あとはテンプレートを定義すれば Job の一覧が表示されるはずです。
+
+まず、モックアップをじっと見てみると各ページのほとんどが同じ部品であることに気づくでしょう。 Perl や HTML であろうとなかろうと、コードの重複は悪いことです。だからコードが重複している View 要素を抑える方法が必要となります。
+
+この問題を解決する1つの方法として各テンプレートでヘッダーとフッターを定義する方法があります:
+
+![header footer](./images/05/header_footer.png)
+
+しかしこの場合ヘッダーやフッターは有効な HTML を含んでいません。よい方法であることは違いありません。車輪の再発明をする代わりにこの問題を解決するため別のデザインパターンを使うことにします。
+それはテンプレートの継承です。
+
+ベースとなるテンプレートを作成し、それを継承することで実際のページを作成します。以下のようなベーステンプレートを root/common/base.mt として定義しましょう。
+
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+    <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+      <head>
+        <title>Jobeet - Your best job board</title>
+        <link rel="shortcut icon" href="/favicon.ico" />
+        <? block javascripts => '' ?>
+        <? block stylesheets => '' ?>
+      </head>
+      <body>
+        <div id="container">
+          <div id="header">
+            <div class="content">
+              <h1><a href="<?= $c->uri_for('/') ?>">
+                <img src="/images/logo.jpg" alt="Jobeet Job Board" />
+              </a></h1>
+     
+              <div id="sub_header">
+                <div class="post">
+                  <h2>Ask for people</h2>
+                  <div>
+                    <a href="<?= $c->uri_for('/job/new') ?>">Post a Job</a>
+                  </div>
+                </div>
+     
+                <div class="search">
+                  <h2>Ask for a job</h2>
+                  <form action="" method="get">
+                    <input type="text" name="keywords"
+                      id="search_keywords" />
+                    <input type="submit" value="search" />
+                    <div class="help">
+                      Enter some keywords (city, country, position, ...)
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+     
+          <div id="content">
+            <div class="content">
+    ? block content => '';
+            </div>
+          </div>
+     
+          <div id="footer">
+            <div class="content">
+              <span class="symfony">
+                <img src="/images/jobeet-mini.png" />
+                powered by <a href="http://opensource.kayac.com/projects/ark/">Ark</a>
+              </span>
+              <ul>
+                <li><a href="">About Jobeet</a></li>
+                <li class="feed"><a href="">Full feed</a></li>
+                <li><a href="">Jobeet API</a></li>
+                <li class="last"><a href="">Affiliates</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+
+`<? block ... ?>` と言う定義に注目してください。Ark のテンプレートではこのようにベーステンプレートでいろいろなブロックを定義しておき、それを継承した子テンプレートでそのブロックを上書きしていきます。
+
+
+### スタイルシート、画像、JavaScript
+
+このチュートリアルの目的は Web デザインではないので、Jobeet で必要なすべてのアセットはすでに用意されています: [画像ファイルをダウンロード](http://www.symfony-project.org/get/jobeet/images.zip)して root/images/ ディレクトリに設置します; [スタイルシートファイルをダウンロード](http://www.symfony-project.org/get/jobeet/css.zip)してweb/css/ディレクトリに設置します。
+
+
+### job テンプレート
+
+それでは /job/ 用のテンプレートを定義していきましょう。
+
+`root/job/index.mt` として以下のようなテンプレートを書いてみましょう
+
+    ? extends 'common/base';
+    
+    ? block stylesheets => sub {
+    <link rel="stylesheet" type="text/css" href="<?= $c->uri_for('/css/main.css') ?>" />
+    <link rel="stylesheet" type="text/css" href="<?= $c->uri_for('/css/jobs.css') ?>" />
+    ? }
+    
+    ? block content => sub {
+    <div id="jobs">
+      <table class="jobs">
+    ? my $i = 0;
+    ? for my $job ($c->stash->{jobs}->all) {
+    ? $i++;
+          <tr class="<?= $i % 2 == 0 ? 'even' : 'odd' ?>">
+            <td class="location"><?= $job->location ?></td>
+            <td class="position">
+              <a href="<?= $c->uri_for('/job', $job->id) ?>">
+                <?= $job->position ?>
+              </a>
+            </td>
+            <td class="company"><?= $job->company ?></td>
+          </tr>
+    ? } # endfor
+    </table>
+    </div>
+    ? } # endblock content
+    
+    
+
+このテンプレートは `extends 'common/base'` で先ほど作成したベーステンプレートを継承し、そしてその後、stylesheets、content と言う二つのブロックを上書きしています。
+
+content ブロックの中では先ほどコントローラからわたされた `$c->stash->{jobs}` オブジェクトを使用して Job の一覧を出力しています。
+
+ここまででジョブの一覧ページはうまく動くはずです。以下のコマンドで開発サーバーを立ち上げて見てください。
 
     $ ark.pl server -d
 
-そうするとコンソールにルーティングのテーブルが表示されます。
+そしてブラウザーで `http://127.0.0.1:4423/job/` にアクセスしてみてください。
 
-    [debug] Loaded Path actions:
-    .-------------------------------------+--------------------------------------.
-    | Path                                | Private                              |
-    +-------------------------------------+--------------------------------------+
-    | /                                   | /index                               |
-    | /                                   | /default                             |
-    | /job                                | /job/show                            |
-    | /job                                | /job/index                           |
-    | /job/create                         | /job/create                          |
-    '-------------------------------------+--------------------------------------'
+![homepage](http://www.symfony-project.org/images/jobeet/1_2/04/homepage.png)
 
-    [debug] Loaded Chained actions:
-    .-------------------------------------+--------------------------------------.
-    | Path Spec                           | Private                              |
-    +-------------------------------------+--------------------------------------+
-    | /job/*/delete/                      | /job/job (1)                         |
-    |                                     | => /job/delete                       |
-    | /job/*/edit/                        | /job/job (1)                         |
-    |                                     | => /job/edit                         |
-    '-------------------------------------+--------------------------------------'
+このような画面が表示されましたか？ 昨日データベースに投入したデフォルトのJobデータが表示されましたね。
+Jobの編集画面などは Ark のフォームクラスを学習した後実装していきましょう。
 
-これは左側のPathに書かれているパスにリクエストのURLがマッチしたら右のメソッドを呼ぶという意味になります。
 
 また明日
---------------------------
+-------
 
-明日は、新しい概念を紹介しませんが、これまでカバーしてきたことをより深く追求することに時間をかけます。
+本日は MVC パターンと、Ark におけるそれらの具体的な役割について学習しました。
+明日はコントローラとURLのマッピングについての詳細について学びます。
+
+今日のコードは Jobeet の git リポジトリから入手できます。 day-05 タグをチェックアウトしてください:
+
+    $ git clone git://github.com/typester/ark-jobeet.git
+    $ cd ark-jobeet
+    $ git checkout day-05
+
+

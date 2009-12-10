@@ -1,0 +1,289 @@
+フォーム
+
+昨日までで Ark の基本的な開発の流れは説明しました。
+今日はフォームフレームワークに焦点を合わせましょう。
+
+
+フォームフレームワーク
+------------------
+
+ほとんどのWebサイトにはフォームがあります。
+シンプルな問い合わせから、たくさんのフィールドがある複雑なものまで、さまざまなフォームがあります。
+フォームを作る作業は、Web 開発者にとってもっとも複雑で退屈な作業の1つです。
+HTML フォームを書き、それぞれのフィールド用のバリデーションルールを実装し、値を処理してデータベースに保存し、エラーメッセージを表示し、エラーの場合はフィールドを再設定することなどが必要です。
+
+もちろん、何度も車輪の再発明をする代わりに、Ark はフォームの管理を簡単にするフレームワークを提供します。フォームフレームワークは3つの部分で構成されます:
+
+* バリデーション: バリデーションサブフレームワークは入力(整数、文字列、Eメールアドレス・・・) をバリデートするクラス群を提供します。
+* ウィジェット: ウィジェットサブフレームワークは HTML フィールド(入力、テキストエリア、選択・・・) を出力するクラス群を提供します。
+* フォーム: フォームクラス群はウィジェットとバリデーターで構成されるフォームを表し、フォームを管理しやすくするメソッドを提供します。それぞれのフォームフィールドに、個別のバリデーターとウィジェットが設定されます。
+
+フォーム
+-------
+
+Ark のフォームは 1 フォーム 1 クラスで表されます。
+それぞれのクラスは 1 つ以上のフィールドから構成されます。
+それぞれのフィールドは名前、バリデーションルール、ウィジェットなどを持ちます。
+
+次のクラスではシンプルな Contact フォームを定義しています。
+
+    package MyContactForm;
+    use Ark 'Form';
+    
+    param subject => (
+        label       => 'Subject',
+        type        => 'TextField',
+        constraints => [
+            'NOT_NULL',
+            [ 'LENGTH', 0, 100 ],
+        ],
+    );
+    
+    param message => (
+        label       => 'Message',
+        type        => 'TextField',
+        widget      => 'textarea',
+        constraints => ['NOT_NULL'],
+    );
+    
+    param sender => (
+        label       => 'E-Mail',
+        type        => 'EmailField',
+        constraints => ['NOT_NULL'],
+    );
+    
+    1;
+
+フォームクラスはこのように param シンタックスを使いフィールドを定義していきます。
+今回の例では subject(題名)、message(メッセージ)、sender(送信者) の 3 つのフィールドをフォームに持たせます。
+
+`TextField` や `EmailField` はフィールドの型を表します。
+`TextField` は普通の `<input type="text".../>` なフィールドを表します。`EmailField` は `TextField` に加え、Email 用のバリデーションルールが加わります。
+
+また TextField 型は基本的には input フィールドを出力しますが、widget を指定することで見た目を自由に変えることができます。（組み込みで気に入る widget がない場合は自分で定義することもできます）
+ここでは message を textarea にするために textarea ウィジェットを選択しています。
+
+constraints の項目には型にあらかじめ用意されているバリデーション以外のルールを追加する場合に使用し、ここでは [FormValidator::Lite](http://search.cpan.org/dist/FormValidator-Lite/) に用意されたルールを指定することができます。
+
+フォームの継承
+------------
+
+フォームを作るごとにクラスを 1 つ作成する必要があるのは面倒に感じるかもしれません。
+しかしクラスにすることによって、継承などのプログラム言語のメリットをフォームでも得ることができるようになります。 Ark のフォームでは共通の部品はベースクラスに定義しておき、固有の部分だけ追加する、置き換えるということが行えます。
+
+先程のコンタクトフォームを継承したフォームを作ってみましょう。
+
+    package MyContactForm2;
+    use Ark 'Form';
+    
+    extends 'MyContactForm';
+    
+    param '+message' => (
+        constraints => [
+            'NOT_NULL',
+            ['LENGTH', 0, 3000],
+        ],
+    );
+    
+    param url => (
+        label => 'URL',
+        type  => 'TextField',
+    );
+    
+    1;
+
+このフォームは message フィールドにバリデーションルールを追加し、新しく URL フィールドを追加しています。
+このように親で定義されているフィールドの一部を上書きする場合は `param '+name'` などのように `+` をつけることで、定義した部分だけ上書きすることができます。
+`+` をつけないと新しく定義しなおすという意味になります。
+
+求人フォームの作成
+---------------
+
+それでは Jobeet の世界に戻りましょう。
+ユーザーが求人を投稿することができる求人フォームを作成していきます。
+
+求人用のフォームクラスを以下のように定義してみましょう：
+
+    package Jobeet::Form::Job;
+    use Ark 'Form';
+    
+    use Jobeet::Models;
+    
+    param category => (
+        label   => 'Category',
+        type    => 'ChoiceField',
+        choices => [map { $_->slug => $_->name } models('Schema::Category')->all],
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    param type => (
+        label   => 'Type',
+        type    => 'ChoiceField',
+        choices => [
+            'full-time' => 'Full time',
+            'part-time' => 'Part time',
+            'freelance' => 'Freelance',
+        ],
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    param company => (
+        label       => 'Company',
+        type        => 'TextField',
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    param url => (
+        label => 'URL',
+        type  => 'URLField',
+    );
+    
+    param position => (
+        label       => 'position',
+        type        => 'TextField',
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    param location => (
+        label       => 'Location',
+        type        => 'TextField',
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    param description => (
+        label       => 'Description',
+        type        => 'TextField',
+        widget      => 'textarea',
+        attr        => {
+            cols => 30,
+            rows => 4,
+        },
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    param how_to_apply => (
+        label       => 'How to apply?',
+        type        => 'TextField',
+        widget      => 'textarea',
+        attr        => {
+            cols => 30,
+            rows => 4,
+        },
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    param email => (
+        label       => 'Email',
+        type        => 'TextField',
+        constraints => [
+            'NOT_NULL',
+        ],
+    );
+    
+    1;
+
+Job コントローラからこのフォームクラスを使用します。
+フォームを使用するときはコントローラに
+
+    with 'Ark::ActionClass::Form';
+
+という行を入れましょう。これを入れるとアクションに `:Form` 属性を使うことができるようになります。
+ここでは求人登録のアクション create アクションにこのフォームクラスを紐付けます。
+
+    sub create :Local :Form('Jobeet::Form::Job') {
+        my ($self, $c) = @_;
+
+        $c->stash->{form} = $self->form;
+    }
+
+こうしておくとこのアクション内では `$self->form` でフォームクラスにアクセスすることができます。
+またこのアクションに対応するテンプレート job/create.mt はまだ作っていませんでした。ここで作成しましょう。
+
+    ? extends 'common/jobs_base';
+    
+    ? block content => sub {
+    
+    <h1>New Job</h1>
+    
+    <form method="post">
+    <?= $c->stash->{form}->render ?>
+    <input type="submit" value="Preview your job" />
+    </form>
+    
+    ? } # endblock content
+    
+
+このように render メソッドを使用することでフォームのhtmlをレンダリングすることができます。
+また `render('name')` などのようにフィールド名を指定するとそのフィールドだけをレンダリングすることもできます。
+
+また render の代わりに label、input、error、メソッドを使用するとそれぞれラベル、inputフィールド、エラー文字列をそれぞれ個別にレンダリングすることもできます。ここではこれを使用してテンプレートを変更していきます。
+
+    ? my $form = $c->stash->{form};
+    
+    ? extends 'common/jobs_base';
+    
+    ? block content => sub {
+    
+    <h1>New Job</h1>
+    
+    <form method="post">
+    
+    <table id="job_form">
+      <tfoot>
+        <tr>
+          <td colspan="2">
+            <input type="submit" value="Preview your job" />
+          </td>
+        </tr>
+      </tfoot>
+      <tbody>
+    ? for my $field (qw/category type company url position location description how_to_apply email/) {
+        <tr>
+          <th><?= raw_string $form->label($field) ?></th>
+          <td>
+    ? if ($form->is_error($field)) {
+            <ul class="error_list">
+    ? for my $err (@{ $form->error_messages($field) }) {
+              <li><?= raw_string $err ?></li>
+    ? } # endfor $err
+            </ul>
+    ? } # endif
+            <?= raw_string $form->input($field) ?>
+          </td>
+        </tr>
+    ? } # endfor $field
+      </tbody>
+    </table>
+    </form>
+    
+    ? } # endblock content
+
+スタイルの効いたフォームが表示されたでしょうか。
+
+ここで、空のままフォームを送信すると適切なエラーが表示されます。また入力されたデータはフォームをサブミットしたあとでもキープされる事がわかると思います。フォームクラスはこのようなフォームにまつわる様々な面倒なことをかわりにやってくれます。
+
+また明日
+------
+
+今日はフォームクラスの基本的な使い方を学習しました。
+
+求人フォームにはまだまだやらなければあります、プレビューの実装、その後のデータ更新。これらは今日の宿題とします！
+明日答え合わせをしましょう。
+
+それではまた明日！
+
+

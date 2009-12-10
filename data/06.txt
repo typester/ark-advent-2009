@@ -1,0 +1,347 @@
+ルーティング
+
+5日目を完璧にこなしているなら、MVCパターンに慣れてきて、コーディング方法がより自然に感じるようになっていることでしょう。もっと時間をかけて学ぶことで、振り返らないようになるでしょう。
+
+今日は、 Ark のルーティングフレームワークのすばらしい世界に飛び込みましょう。
+
+URL
+------
+
+Jobeet ホームページ上の求人情報をクリックすると、URLは /job/1 のように表示されます。
+もし PHP で Web サイトの開発をしたことがあるなら、おそらく /job.php?id=1 というURLを見慣れているでしょう。 
+Ark はどうやって動作しているのでしょうか？
+ Ark はどうやってこのURLを基本とするアクションを決めているのでしょうか？
+なぜ求人の id は `my ($self, $c, $id) = @_;` で取得できるのでしょうか？
+今日は、これら全ての問題の答えを見てゆきます。
+
+しかしまず初めに、 URL と URL が正確に指すものについて話します。
+Web コンテキスト上で、URL は Web リソースの一意的な名前です。 URL 先へ行くと、ブラウザーに URLに よって分類されているリソースを取得するように頼みます。
+そして URL は Web サイトとユーザー間のインターフェイスとして、リソースが参照している意味のある情報を伝えます。しかし旧来の URL は実際にはリソースについての説明をしておらず、アプリケーションの内部構造を公開してしまっています。
+ユーザーは Web サイトが Perl で開発されているとか、求人情報が持つデータベースのある識別子というようなことはあまり気にしません。
+アプリケーションの内部動作を公開することはセキュリティの観点から見ても、非常にまずいです。
+ユーザーが URL 先にアクセスすることなくリソースを予想することができたらどうだろうか？
+開発者は適切な方法でアプリをセキュアすべきで、機密情報は隠したほうがよいです。
+URL は Ark でフレームワーク全体を管理するのに重要なものです。
+これはルーティングフレームワークで管理します。
+
+Arkの基本的的なルーティング
+---------
+
+Ark のルーティングは、Symfony や Ruby on Rails のように、一つの設定ファイルにまとめて記述するような方式ではありません。Ark ではコントローラーメソッドの定義がそのままルーティングの役割を果たします。コントローラーのメソッドにアトリビュートを付加することにより、様々なURLを表現することができます。
+
+代表的なアトリビュートは以下の3つです。
+
+* Path
+* Regex
+* Chained
+
+### Path
+
+Path アトリビュートにマッチさせたいURLを記述します。
+
+パッケージ名が Foo の場合は foo からのパスになります。以下の例では /foo/bar というURLにマッチします。
+
+    package SampleApp::Controller::Foo;
+    use Ark 'Controller';
+
+    # /foo/bar
+    sub bar :Path('bar') {
+        my ($self, $c) = @_;
+    }
+
+このとき、メソッド名は関係ありません。以下も/foo/barにマッチします。
+
+    package SampleApp::Controller::Foo;
+    use Ark 'Controller';
+
+    # /foo/bar
+    sub hoge :Path('bar') {
+        my ($self, $c) = @_;
+    }
+
+
+Pathに何も指定しないとその package のルートになります。これは /foo にマッチします。
+
+    package SampleApp::Controller::Foo;
+    use Ark 'Controller';
+
+    # /foo
+    sub index :Path {
+        my ($self, $c) = @_;
+    }
+
+Root コントローラーを書く場合は下記の様に namespace を空にします。
+
+    has '+namespace' => default => '';
+
+これは /about にマッチします。
+
+    package SampleApp::Controller::Root;
+    use Ark 'Controller';
+
+    has '+namespace' => default => '';
+
+    # /about
+    sub about :Path('about') {
+        my ($self, $c) = @_;
+    }
+
+これは /（トップ）にマッチします。
+
+    package SampleApp::Controller::Root;
+    use Ark 'Controller';
+
+    has '+namespace' => default => '';
+
+    # /
+    sub index :Path {
+        my ($self, $c) = @_;
+    }
+
+Pathの中を絶対パスで書くと絶対パスでマッチするので package 名も関係なくなります。これは /hoge/fuga にマッチします。
+
+    package SampleApp::Controller::Foo;
+    use Ark 'Controller';
+
+    # /hoge/fuga
+    sub bar :Path('/hoge/fuga') {
+        my ($self, $c) = @_;
+    }
+
+#### Args 
+
+Argsを指定することで URL からパラメータを取得できます。Args に受け取る数を指定します。
+
+これは `/foo/*` にマッチします。
+
+    package SampleApp::Controller::Foo;
+    use Ark 'Controller';
+
+    # /foo/*
+    sub index :Path :Args(1) {
+        my ($self, $c, $args) = @_;
+    }
+
+Args を指定するとその指定した数だけ URL から引数を受け取ることが出来ます。上の例では `$args` として受け取っています。
+
+下記の例では `/*` と `/*/**` にマッチして `/*` はindex1、`/*/*`はindex2のメソッドを実行します。
+
+    package SampleApp::Controller:Root;
+    use Ark 'Controller';
+
+    has '+namespace' => default => '';
+
+    # /*
+    sub index1 :Path :Args(1) {
+        my ($self, $c, $args) = @_;
+    }
+
+    # /*/*
+    sub index2 :Path :Args(2) {
+        my ($self, $c, $args1, $args2) = @_;
+    }
+
+
+Argsに何も指定しないと`/*/*/*/*...`のように、すべてにマッチするので、通常Rootコンローラーにこれを置いて404のページに使います。
+
+    package SampleApp::Controller:Root;
+    use Ark 'Controller';
+
+    has '+namespace' => default => '';
+
+    sub default :Path :Args {
+        my ($self, $c) = @_;
+        # 404
+    }
+
+また Args アトリビュートを指定しない場合 Args(0) を指定したと見なされます。
+
+
+#### Local
+
+Localアトリビュートはメソッド名にマッチします。
+
+    sub foo :Path('about') {
+    }
+
+と
+
+    sub about :Local {
+    }
+
+は同じ意味になります。
+
+#### Global
+
+メソッド名がトップレベルになります。
+
+    sub foo :Path('/about') {
+    }
+
+と
+
+    sub about :Global {
+    }
+
+は同じになります。
+
+### Regex
+
+正規表現でマッチします。パッケージ名やメソッド名は関係ありません。
+
+    sub hoge :Regex('^/article//(\d{4})/(\d{2})/(\d{2})') {
+        my ($self, $c, $year, $month, $day) = @_;
+    }
+
+これでRegexに指定したURLにマッチします。正規表現の()の中の値を引数として受け取ることができます。
+
+### Chained
+
+/job/{job_id}/edit のような複雑なURLを使いたい場合はChainedを使います。
+
+    sub job :Chained('/') :PathPart :CaptureArgs(1) {
+        my ($self, $c, $job_id) = @_;
+        $c->stash->{job_id} = $job_id;
+    }
+
+    # /job/{job_id}/edit
+    sub job_edit :Chained('job') :PathPart('edit') {
+        my ($self, $c) = @_;
+    }
+
+このとき、PathPartの値を省略するとメソッド名がPathPartの値になります。例えば、job_editメソッドは以下のように書くのと同じです。
+
+    # /job/{job_id}/edit
+    sub edit :Chained('job') :PathPart :Args(0) {
+        my ($self, $c) = @_;
+    }
+
+Rootコントローラー
+-----------------
+
+それでは実際にJobeetのコントローラーを書いていきましょう。実はプロジェクトをつくった時点で、トップページと404のアクションはすでに定義されています。
+
+lib/Jobeet/Controller/Root.pm というファイルが自動で作成されています。また昨日 end メソッドを追加しました。現在の内容は以下の用になっています。
+
+    package Jobeet::Controller::Root;
+    use Ark 'Controller';
+    
+    has '+namespace' => default => '';
+    
+    # default 404 handler
+    sub default :Path :Args {
+        my ($self, $c) = @_;
+    
+        $c->res->status(404);
+        $c->res->body('404 Not Found');
+    }
+    
+    sub index :Path :Args(0) {
+        my ($self, $c) = @_;
+        $c->res->body('Ark Default Index');
+    }
+    
+    sub end :Private {
+        my ($self, $c) = @_;
+    
+        unless ($c->res->body or $c->res->status =~ /^3\d\d/) {
+            $c->forward( $c->view('MT') );
+        }
+    }
+    
+    1;
+
+Rootコントローラーのアクションはこれでいいでしょう。
+
+Jobコントローラー
+-----------------
+
+次にJobのコントローラーを作ります。Jobで必要なページは以下のものです。
+
+* jobトップ（一覧）
+* 詳細
+* 新規作成
+* 編集
+* 削除
+
+昨日一覧ページは作成しました。コードは以下のようになっています。
+
+    package Jobeet::Controller::Job;
+    use Ark 'Controller';
+    
+    use Jobeet::Models;
+    
+    sub index :Path {
+        my ($self, $c) = @_;
+    
+        $c->stash->{jobs} = models('Schema::Job');
+    }
+    
+    1;
+
+以下のように他のアクションも定義していきましょう。
+
+    # /job/{job_id} （詳細）
+    sub show :Path :Args(1) {
+        my ($self, $c, $job_id) = @_;
+    }
+
+    # /job/create （新規作成）
+    sub create :Local :Args(0) {
+        my ($self, $c) = @_;
+    }
+
+    sub job :Chained('/') :PathPart :CaptureArgs(1) {
+        my ($self, $c, $job_id) = @_;
+        $c->stash->{job_id} = $job_id;
+    }
+
+    # /job/{job_id}/edit （編集）
+    sub edit :Chained('job') :PathPart :Args(0) {
+        my ($self, $c) = @_;
+    }
+
+    # /job/{job_id}/delete （削除）
+    sub delete :Chained('job') :PathPart :Args(0) {
+        my ($self, $c) = @_;
+    }
+
+    1;
+
+
+確認する
+-------------------
+
+ここまでできたら一度サーバーをデバッグモードで起動してみましょう。
+
+    $ ark.pl server -d
+
+そうするとコンソールにルーティングのテーブルが表示されます。
+
+    [debug] Loaded Path actions:
+    .-------------------------------------+--------------------------------------.
+    | Path                                | Private                              |
+    +-------------------------------------+--------------------------------------+
+    | /                                   | /index                               |
+    | /                                   | /default                             |
+    | /job                                | /job/show                            |
+    | /job                                | /job/index                           |
+    | /job/create                         | /job/create                          |
+    '-------------------------------------+--------------------------------------'
+
+    [debug] Loaded Chained actions:
+    .-------------------------------------+--------------------------------------.
+    | Path Spec                           | Private                              |
+    +-------------------------------------+--------------------------------------+
+    | /job/*/delete/                      | /job/job (1)                         |
+    |                                     | => /job/delete                       |
+    | /job/*/edit/                        | /job/job (1)                         |
+    |                                     | => /job/edit                         |
+    '-------------------------------------+--------------------------------------'
+
+これは左側の Path に書かれているパスにリクエストの URL がマッチしたら右のメソッドを呼ぶという意味になります。
+
+また明日
+--------------------------
+
+明日は、新しい概念を紹介しませんが、これまでカバーしてきたことをより深く追求することに時間をかけます。
