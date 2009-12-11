@@ -179,13 +179,13 @@ prove コマンドには、よく使われるいくつかのオプションが�
 それでは、先程書いた jobeet_test.t を実行してみましょう!
 Jobeetプロジェクトのrootディレクトリに移動して、`prove -lr t/jobeet_test.t`を実行します。
 
-    $ prove -l t/jobeet_test.t
+<pre><code>$ prove -l t/jobeet_test.t
 
-    t/jobeet_test.t .. ok
-    All tests successful.
-    Files=1, Tests=1,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.51 cusr  0.06 csys =  0.60 CPU)
-    Result: PASS
-
+t/jobeet_test.t .. ok
+<span style="color:lightgreen;">All tests successful.</span>
+Files=1, Tests=1,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.51 cusr  0.06 csys =  0.60 CPU)
+Result: PASS
+</code></pre>
 
 全てのテストが実行されて、緑色の文字があなたに全てのテストが pass した事を教えてくれます。
 
@@ -241,12 +241,13 @@ Schema クラスのテストを書く
 
 それでは実行してみましょう。
 
-    $ prove -l t/jobeet_schema_result_job.t
+<pre><code>$ prove -l t/jobeet_schema_result_job.t
 
-    t/jobeet_schema_result_job.t .. ok
-    All tests successful.
-    Files=1, Tests=1,  2 wallclock secs ( 0.02 usr  0.01 sys +  0.55 cusr  0.07 csys =  0.65 CPU)
-    Result: PASS
+t/jobeet_schema_result_job.t .. ok
+<span style="color:lightgreen;">All tests successful.</span>
+Files=1, Tests=1,  2 wallclock secs ( 0.02 usr  0.01 sys +  0.55 cusr  0.07 csys =  0.65 CPU)
+Result: PASS
+</code></pre>
 
 全てのテストをPASSしました。まだテストは1つしかありませんが、_All tests successful_の文字が誇らしいです。
 
@@ -265,12 +266,13 @@ Schema クラスのテストを書く
 
 それでは、実行してみます。
 
-    $ prove -l t/jobeet_schema_result_job.t
+<pre><code>$ prove -l t/jobeet_schema_result_job.t
 
-    t/jobeet_schema_result_job.t .. ok
-    All tests successful.
-    Files=1, Tests=4,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.55 cusr  0.07 csys =  0.65 CPU)
-    Result: PASS
+t/jobeet_schema_result_job.t .. ok
+<span style="color:lightgreen;">All tests successful.</span>
+Files=1, Tests=4,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.55 cusr  0.07 csys =  0.65 CPU)
+Result: PASS
+</code></pre>
 
 おめでとうございます!! 全てのテストが通りました。
 良い区切りなので、testsの数が 4 だということを`Test::More`に教えてあげます。
@@ -350,12 +352,13 @@ Schema クラスのテストを書く
 
 実行してみます。
 
-    $ prove -lr t/jobeet_schema_result_category.t
+<pre><code>$ prove -lr t/jobeet_schema_result_category.t
 
-    t/jobeet_schema_result_category.t .. ok
-    All tests successful.
-    Files=1, Tests=1,  1 wallclock secs ( 0.03 usr  0.01 sys +  0.50 cusr  0.08 csys =  0.62 CPU)
-    Result: PASS
+t/jobeet_schema_result_category.t .. ok
+<span style="color:lightgreen;">All tests successful.</span>
+Files=1, Tests=1,  1 wallclock secs ( 0.03 usr  0.01 sys +  0.50 cusr  0.08 csys =  0.62 CPU)
+Result: PASS
+</code></pre>
 
 問題ないですね。
 
@@ -410,12 +413,13 @@ Schema クラスのテストを書く
 
 テストを実行してみましょう。
 
-    $ prove -lr t/jobeet_schema_result_category.t
+<pre><code>$ prove -lr t/jobeet_schema_result_category.t
 
-    t/jobeet_schema_result_category.t .. ok
-    All tests successful.
-    Files=1, Tests=2,  1 wallclock secs ( 0.03 usr  0.00 sys +  0.55 cusr  0.08 csys =  0.66 CPU)
-    Result: PASS
+t/jobeet_schema_result_category.t .. ok
+<span style="color:lightgreen;">All tests successful.</span>
+Files=1, Tests=2,  1 wallclock secs ( 0.03 usr  0.00 sys +  0.55 cusr  0.08 csys =  0.66 CPU)
+Result: PASS
+</code></pre>
 
 プログラムが正しく修正されたことで、全てのテストが成功するようになりました。
 1つのバグが修正され、さらにテストを書いた事により同じバグが再発する可能性も低い物となりました。
@@ -503,12 +507,13 @@ Schema クラスのテストを書く
 
 テストを実行します。
 
-    prove -l t/jobeet_schema_resultset_category.t
+<pre><code>prove -l t/jobeet_schema_resultset_category.t
 
-    t/jobeet_schema_resultset_category.t .. ok
-    All tests successful.
-    Files=1, Tests=3,  1 wallclock secs ( 0.02 usr  0.00 sys +  0.55 cusr  0.07 csys =  0.64 CPU)
-    Result: PASS
+t/jobeet_schema_resultset_category.t .. ok
+<span style="color:lightgreen;">All tests successful.</span>
+Files=1, Tests=3,  1 wallclock secs ( 0.02 usr  0.00 sys +  0.55 cusr  0.07 csys =  0.64 CPU)
+Result: PASS
+</code></pre>
 
 全てのテストが成功しました。
 `Jobeet::Schema::ResultSet::Category` のテストは完了としましょう。
@@ -810,12 +815,13 @@ Schema クラスのテストを書く
 
 それでは実行してみましょう。
 
-    $ prove -l t/jobeet_schema_result_category.t
+<pre><code>$ prove -l t/jobeet_schema_result_category.t
 
-    t/jobeet_schema_result_category.t .. ok
-    All tests successful.
-    Files=1, Tests=8,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.58 cusr  0.07 csys =  0.68 CPU)
-    Result: PASS
+t/jobeet_schema_result_category.t .. ok
+<span style="color:lightgreen;">All tests successful.</span>
+Files=1, Tests=8,  1 wallclock secs ( 0.02 usr  0.01 sys +  0.58 cusr  0.07 csys =  0.68 CPU)
+Result: PASS
+</code></pre>
 
 全てのテストが成功して、緑色の文字列があなたを祝福してくれました。
 あなたのアプリケーションは確実に堅守な物になりました。素晴らしいです。
@@ -837,13 +843,14 @@ Schema クラスのテストを書く
 `prove` コマンドに `t` ディレクトリを引数として実行するとディレクトリ以下のテストを全て実行する事ができます。
 今回は使っていませんが、サブディレクトリにあるテストも実行させる場合には、先程説明した `-r` オプションを使用します。
 
-    $ prove -l t
+<pre><code>$ prove -l t
 
-    ...
+...
 
-    All tests successful.
-    Files=5, Tests=17,  3 wallclock secs ( 0.04 usr  0.02 sys +  2.34 cusr  0.34 csys =  2.74 CPU)
-    Result: PASS
+<span style="color:lightgreen;">All tests successful.</span>
+Files=5, Tests=17,  3 wallclock secs ( 0.04 usr  0.02 sys +  2.34 cusr  0.34 csys =  2.74 CPU)
+Result: PASS
+</code></pre>
 
 全てのテストを `pass` した事を確認したので、今日はここまでにしましょう。
 
