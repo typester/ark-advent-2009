@@ -609,8 +609,8 @@ Schema クラスのテストを書く
         location     => 'Paris, France',
         description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
         how_to_apply => "Send your resume to lorem.ipsum [at] company_2.sit",
-        is_public    => 2,
-        is_activated => 2,
+        is_public    => 1,
+        is_activated => 1,
         token        => "job_2",
         email        => 'job@example.com',
     });
@@ -622,8 +622,8 @@ Schema クラスのテストを書く
         location     => 'Paris, France',
         description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
         how_to_apply => "Send your resume to lorem.ipsum [at] company_3.sit",
-        is_public    => 3,
-        is_activated => 3,
+        is_public    => 1,
+        is_activated => 1,
         token        => "job_3",
         email        => 'job@example.com',
     });
@@ -748,8 +748,8 @@ Schema クラスのテストを書く
             location     => 'Paris, France',
             description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
             how_to_apply => "Send your resume to lorem.ipsum [at] company_2.sit",
-            is_public    => 2,
-            is_activated => 2,
+            is_public    => 1,
+            is_activated => 1,
             token        => "job_2",
             email        => 'job@example.com',
         });
@@ -761,8 +761,8 @@ Schema クラスのテストを書く
             location     => 'Paris, France',
             description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
             how_to_apply => "Send your resume to lorem.ipsum [at] company_3.sit",
-            is_public    => 3,
-            is_activated => 3,
+            is_public    => 1,
+            is_activated => 1,
             token        => "job_3",
             email        => 'job@example.com',
         });
