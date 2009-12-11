@@ -1,6 +1,7 @@
 pre code {
     color: #F6F3E8;
     background-color: #000;
+    overflow: auto;
 }
 
 /* ir-black */
