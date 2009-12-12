@@ -1,0 +1,227 @@
+機能テスト
+
+昨日は、`Test::More` を使用してユニットテストする方法を見ました。
+
+今日は、`Ark::Test` モジュールを利用した、機能テストについて学びます。
+
+
+機能テスト
+--------------------------
+
+ブラウザーによるリクエストからサーバーによって送信されるレスポンスまで~機能テスト~はアプリケーションの隅から隅までテストする偉大なツールで
+す: これらはアプリケーションのすべてのレイヤー: ルーティング、モデル、アクション、とテンプレートを~テスト~します。これらはすでに手作業でや
+っていることと非常に似ています: アクションを追加もしくは修正するたびに、ブラウザーに向かいリンクをクリックしレンダリングされたページの要素
+をチェックしてすべてが期待どおりに動作することを確認する必要があります。言い換えると、実装したばかりのユースケースに対応するシナリオを実行
+します。
+
+
+Ark::Test
+--------------------------
+
+`Ark` フレームワークに付属している `Ark::Test` モジュールを使う事で、機能テストを簡単に始める事ができます。
+
+使い方は非常に簡単です。
+
+次のように、アプリケーション名を指定して `use` するだけです。
+
+    use Ark::Test 'TestApp';
+
+`Ark::Test` はテストに便利ないくつかの関数をexportします。
+
+以下によく使われる物をリストアップします:
+
+
+<table cellspacing="0" class="doc_table">
+<thead>
+<tr>
+  <th>関数名</th>
+  <th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>get($url)</code></td>
+  <td>getリクエストを行って、contentを返す</td>
+</tr>
+<tr>
+  <td><code>request</code></td>
+  <td>リクエストを行ってレスポンスオブジェクトを返す</td>
+</tr>
+<tr>
+  <td><code>ctx_get</code></td>
+  <td>リクエストを行って、contentとコンテキストオブジェクトの配列を返す</td>
+</tr>
+<tr>
+  <td><code>ctx_request</code></td>
+  <td>リクエストを行って、レスポンスオブジェクトとコンテキストオブジェクトの配列を返す</td>
+</tr>
+</tbody>
+</table>
+
+
+
+[昨日](http://opensource.kayac.com/ja/projects/ark/advent/2009/11.html)書いた `Jobeet::Test` モジュールは `Ark::Test` モジュールを継承しているので、今日のテストでは `Jobeet::Test` を使います。
+
+
+求人フォームのテスト
+--------------------------
+
+[9日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/09.html)、[10日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/10.html)で書いた、ユーザーが求人を投稿することができる求人フォームの機能テストをしましょう。
+
+requestオブジェクトを作るのに `HTTP::Request::Common` モジュールを利用するので、 `use HTTP::Request::Common;` を追加します。
+
+また、アプリケーションを setup するために、`Jobeet::Test`(`Ark::Test`) を `use` する際にアプリケーション名を渡します。
+
+したがってテストのヘッダ部分は次のようになります。
+
+    use strict;
+    use warnings;
+    use Test::More;
+
+    use Jobeet::Test 'Jobeet';
+    use Jobeet::Models;
+    use DateTime;
+
+    use HTTP::Request::Common;
+
+
+`Jobeet::Test` モジュールを使用しているので、データベースは初期化されている状態でテストがスタートします。
+
+
+ジョブを作成するための、求人フォームのテストから始めます。
+
+まずはテスト用のカテゴリーを追加しましょう。
+
+    models('Schema::Category')->create({ name => 'Programming' });
+
+次に、求人フォームの項目が正しいかテストします。
+
+`/job/create` にアクセスして、form要素が満たされているかを確認します。
+
+    my @job_form_names = qw/ category type company url position location description how_to_apply email /;
+    my $res = request( GET '/job/create' );
+
+    like $res->content, qr{ name="$_" }xms, sprintf('job form has %s', $_)
+        for @job_form_names;
+
+
+
+`form` の要素が問題ない事を確認したら、次は `form` のバリデーションが行われるかを確認しましょう。
+
+[9日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/09.html)の作業を思い出してください。空のままフォームを送信すると適切なエラーが表示されるのでした。
+
+あの時は、手動でブラウサを操作して確認したと思います。今回は、プログラムで行いましょう。テストを書いておけば回帰的に実行する事ができます。
+
+フォームに何も入力しない状態でPOSTすると、レスポンスにバリデーションのエラーメッセージが含まれている事をテストします。
+
+    my @choice_fields  = qw/ category type /;
+    my @job_form_names = qw/ company url position location description how_to_apply email /;
+
+    my %params =  map { $_ => undef } @job_form_names;
+    my $res = request( POST '/job/create', [ %params ] );
+
+    like $res->content, qr{<span class="error">}, 'job form shows error message';
+
+
+バリデーションの確認が済んだので、正しい値をPOSTして作成される事をテストします。
+
+テスト用のデータ・POSTするパラメータを作ります。データ構造について忘れてしまった場合は、[3日目](http://opensource.kayac.com/ja/projects/ark/advent/2009/03.html)を読み返してみてください。
+
+    my $category = models('Schema::Category')->find({ name => 'Programming' });
+    my $category_slug = $category->slug;
+
+    my %params = (
+        category => $category_slug,
+        type         => 'full-time',
+        company      => 'Sensio Labs',
+        url          => 'http://www.sensiolabs.com/',
+        position     => 'Web Developer',
+        location     => 'Paris, France',
+        description  => q[You've already developed websites with symfony and you want to work with Open-Source technologies. You have a minimum of 3 years experience in web development with PHP or Java and you wish to participate to development of Web 2.0 sites using the best frameworks available.],
+        how_to_apply => 'Send your resume to fabien.potencier [at] sensio.com',
+        email        => 'job@example.com',
+    );
+
+POSTリクエストを行って、データが作成され、リダイレクトされる事を確認します。
+
+    my $res = request( POST '/job/create', [ %params ] );
+
+    is $res->code, 302, 'job create ok';
+
+リダイレクト先のページの表示を確認します。
+
+
+    my $job_uniq_url = $res->header('location');
+
+    my $res = request( GET $job_uniq_url );
+
+    like $res->content, qr{<div id="job_actions">}, 'show job';
+
+
+
+作成されたジョブを習得します。
+
+    my $created_job = models('Schema::Job')->search(
+        { category_id => $category->id },
+        { rows => 1, page => 1},
+    )->first;
+
+`/job/<token>/publish` ページにアクセスして、作成されたジョブを公開します。
+
+    my $res = request( GET sprintf('/job/%s/publish', $created_job->token) );
+
+    is $res->code, 302;
+
+
+ジョブが公開されたかを確認します。
+
+`$created_job` を取得してからデータが更新されたため、`discard_changes` を呼んでデータを再習得し、`is_activated` が真を返すかをテストします。
+
+    $created_job->discard_changes;
+
+    ok $created_job->is_activated, 'job published';
+
+
+ジョブが公開された事を確認してので、次は表示の確認をします。
+
+公開状態になると、期限切れのまでの日数の表示が行われるのでした。その表記がレスポンスに含まれるかをテストします。`$job_uniq_url` は先程作成したジョブのURLです。
+
+    my $res = request( GET $job_uniq_url );
+
+    like $res->content, qr{Expires in .+ days}, 'show days_before_expired after published';
+
+
+最後に、期限切れが近づくと期限を延長させるためのリンクが表示されるようになる という仕様のテストを行います。
+
+先程作成したジョブの期限を明日に変更すると、期限が差し迫った状態を作る事ができます。
+
+    $created_job->update({ expires_at => DateTime->now->add( days => 1 ) });
+
+期限が差し迫ったジョブのページにリクエストして、延長させるためのリンク(Extend)が表示されているかをテストします。
+
+    my $res = request( GET sprintf('/job/%s', $created_job->token) );
+    like $res->content, qr{<a href="">Extend</a>}, 'appear "Extend" link when job is expires_soon';
+
+
+全てのケースを完全にテストした訳ではありませんが、今日はここまでにします。
+
+また明日
+--------------------------
+
+今日は、求人フォームのテストを中心に機能テストについて学びました。
+
+アプリケーションのその他の部分の機能テストは、宿題ということにしておきます。
+
+
+今回は学習コストの低い、シンプルな `Ark::Test` を使ってテストを書きましたが、あなたが書くアプリケーションが大きくなってくると、 `Ark::Test` より高水準の(そして学習コストの高い)テストフレームワークを使いたいと考えるかもしれません。
+
+でも心配ありません。`Ark` アプリケーションは特定のテストフレームワークに縛られていないので、CPAN上にある先人達の知恵が詰まった高品質なテストモジュールを利用してテストを行う事もできます。
+
+
+最後に重要な事を書きます。
+
+この2日間は既存のコードのテストを書きましたが、本来ならば、テストを書いてから実装する [テスト駆動開発(TDD)](http://ja.wikipedia.org/wiki/%E3%83%86%E3%82%B9%E3%83%88%E9%A7%86%E5%8B%95%E9%96%8B%E7%99%BA) をすべきです。
+
+
+このチュートリアルでも今後は可能な限りテストを先に書いてから実装していきます。
+
