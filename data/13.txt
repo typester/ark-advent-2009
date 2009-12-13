@@ -1,0 +1,118 @@
+フォームのテスト
+
+11日目で Perl でのテストの書き方を学習しました。今日はフォームのテストの仕方を学習します。
+
+
+フォームテストの基本
+-----------------
+
+求人作成とバリデーション処理用のテストを追加するために `t/form/job.t` ファイルを作成しましょう：
+
+    use Test::More;
+    use CGI::Simple;
+
+    use_ok 'Jobeet::Form::Job';
+    
+    # ここにテストを書く
+    
+    done_testing;
+
+まずテストを書くために `Test::More` を use し、フォームリクエストを作るために `CGI::Simple` を `use` します。
+
+そして `use_ok` 関数で目的のフォームクラス（Jobeet::Form::Job）がちゃんと use できるかをまずテストします。
+
+その後フォームのテストを書き、最後に `done_testing` で終了します。
+
+
+正常系のテスト
+------------
+
+まずはフォームがただしく投稿された場合のテストを書いてみましょう。
+
+`job.t` の `done_testing の手前に以下のコードを追加します。
+
+    {
+        my $f = Jobeet::Form::Job->new(
+            CGI::Simple->new({
+                category     => 'design',
+                type         => 'full-time',
+                company      => 'Sensio Labs',
+                url          => 'http://www.sensio.com/',
+                position     => 'Developer',
+                location     => 'Atlanta, USA',
+                description  =>
+                    'You will work with symfony to develop websites for our customers.',
+                how_to_apply => 'Send me an email',
+                email        => 'for.a.job@example.com',
+            }),
+        );
+    
+        ok $f->submitted_and_valid, 'form submitted_and_valid ok';
+    }
+
+このように `Job` クラスに `CGI::Simple` のオブジェクトを渡してあげるとフォームリクエストをシミュレートすることができます。そのフォームオブジェクトはコントローラやテンプレートで使うのと同じように使うことができるのでそれを使ってテストを行います。
+
+ここでは必要十分なデータが渡されているはずなので、`submitted_and_valid` のみテストを行っています。
+
+`{}` というスコープでくくっているのは、テストごとに毎回フォームオブジェクトを作成するので、テストごとにスコープを分けるためにつけています。
+
+
+エラーをテストする
+---------------
+
+有効な値を投稿するときに求人フォーム作成は期待どおりに動作します。有効ではないデータを投稿するときにふるまいをチェックするテストを追加してみましょう:
+
+    {
+        my $f = Jobeet::Form::Job->new(
+            CGI::Simple->new({
+                company      => 'Sensio Labs',
+                position     => 'Developer',
+                location     => 'Atlanta, USA',
+                email        => 'not.an.email',
+            }),
+        );
+    
+        ok $f->has_error, 'form has error ok';
+    
+        like $f->error_message_plain('description'),
+            qr/required/, 'description required ok';
+        like $f->error_message_plain('how_to_apply'),
+            qr/required/, 'how_to_apply required ok';
+        like $f->error_message_plain('email'),
+            qr/invalid/, 'email is invalid ok';
+    }
+
+フォームがエラーを含むとき、`has_error` メソッドは真を返します。
+
+そして、`error_message_plain` でエラーメッセージが期待した物になっているかテストしています。
+`error_message_plain` は `error_message` 関数から HTML フォーマット整形を抜いた物です。
+
+昨日まで忠実にチュートリアルにしたがってきた方はこのテストを走らせると、テストが失敗すると思います。email フィールドに email 用の制約をつけ忘れていたようです。フォームクラスを編集し追加しておきましょう：
+
+    param email => (
+        label       => 'Email',
+        type        => 'TextField',
+        constraints => [
+            'NOT_NULL',
+            'EMAIL_LOOSE',
+        ],
+    );
+
+`EMAIL_LOOSE` とはメールアドレスのチェックをしますが、DoCoMo などの携帯アドレスにありがちな RFC 違反のアドレスは許可するという良い感じの制約です。
+
+この後もう一度テストを走らせてみてください。通りましたね？
+
+あとはこの調子でがしがしテストコードを書けばいいのです。
+
+
+また明日
+-------
+
+テストは perl の開発の中で重要な役割を持ちます。開発プロセスを簡単で、速く、より重要で、安全にするためにテストコードは必須であると言えます。
+
+テストについては一日では語りきれませんので明日また一日テストに費やしましょう。
+
+今日のフォームのテストの残りは各自の宿題とします。
+それではまた明日。
+
+
