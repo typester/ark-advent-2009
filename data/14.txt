@@ -1,0 +1,346 @@
+機能テスト
+
+昨日まで、 `Test::More` を用いて perl クラスをユニットテストする方法を見ました。
+
+今日は、`Jobeet::Controller::*` で実装したコントローラ用の機能テストを書きます。
+
+コントローラのテスト
+-----------------
+
+perlクラスをユニットテストする方法は学びました。
+
+しかし Ark のコントローラはどうテストするのでしょう。
+テストのためにいちいち Ark アプリケーションを立ち上げてブラウザでアクセスするのはめんどうです。
+
+Ark はコントローラテストのためのヘルパーライブラリ `Ark::Test` を提供しています。
+これを使用すると Web サーバーをたちあげることなくコントローラのテストをすることができます。
+
+
+Ark::Test を用いたコントローラのテスト
+----------------------------------
+
+`Ark::Test` を使う準備は簡単です。
+
+    use Ark::Test 'Jobeet';
+
+などのようにアプリケーションライブラリ名を use とともに渡してやるだけです。こうしてやると以下の関数がテスト内で使用できるようになります：
+
+ * get
+ * request
+ * ctx_get
+ * ctx_request
+
+それぞれ以下のような機能を持ちます
+
+### get
+
+    my $content = get('/job/');
+
+Jobeet アプリケーションの '/job/' へアクセスし、そのコンテンツ（HTML) のデータを返します。
+
+### request
+
+    my $request  = HTTP::Request->new( GET => '/job/' );
+    my $response = request($request);
+
+getメソッドと同様ですが、こちらは `HTTP::Request` オブジェクトを元にリクエストを送信し、`HTTP::Response` オブジェクトを取得できます。
+
+get と違いリクエストを自由につくれるので GET 以外にも POST などさまざまなリクエストを送信することができます。またレスポンスもオブジェクトで取得でき、ステータスコードやヘッダーのテストも行えます。
+
+### ctx_get, ctx_request
+
+    my $c = ctx_get('/job/');
+    my ($content, $c) = ctx_get('/job/');
+    
+    my $c = ctx_request($request);
+    my ($response, $c) = ctx_request($request);
+
+機能は `get`、`request` と同じですが、コントローラ内で使用しているコンテキストオブジェクト `$c` を取得することができます。テストコードから stash の値を確認したりする場合に使用します。
+
+
+### Ark::Test のオプション
+
+Ark::Test ではデフォルトでは1接続ごとにセッションが切れます。
+これはシンプルなテストのために設計されているからですが、たとえばログインセッションを複数のテストで保ったままにしておきたい場合などがあるでしょう。そのような場合には `reuse_connection` と言うオプションを使用することができます：
+
+    use Ark::Test 'Jobeet', reuse_connection => 1;
+
+このようにするとこのテスト内では get、request などの複数のメソッドの間でセッションが引き継がれます。
+
+
+Jobeet::Test
+------------
+
+11日目に、この Ark::Test を継承した自前のテストクラスを作成しました。これはモデルをテスト用のものにするためでしたね。しかしこの Jobeet::Test は Ark::Test の機能をまるまる含んでいるので get や request などの関数をテスト内で使用することができます。
+
+コントローラ内でモデルを使用しているので Jobeet::Test を必ず使いましょう。さもなければアプリケーションDBがテストによって更新されてしまうかもしれません。
+
+また11日目では述べませんでしたが、`Jobeet::Test` はアプリケーション名を省略できます。
+
+    use Jobeet::Test;
+
+と書いたとき、
+
+    use Jobeet::Test 'Jobeet';
+
+と書いたのと同じ意味になります。
+しかし以下のようにオプションを渡すような場合：
+
+    use Jobeet::Test 'Jobeet', reuse_connection => 1;
+
+このような場合はアプリケーション名（Jobeet) は省略できませんのでご注意ください。
+
+
+Fixtures
+--------
+
+テストでは状況に応じたデータが必要になります。簡単な物ならテスト内でデータを作成すればいいでしょうが、複雑な物や、複数のテストで使用するデータなどは一カ所にまとめたいと思うでしょう。
+
+perl ではこのような Fixture データを用意するモジュールがいろいろありますが、このチュートリアルでは DBIC オブジェクトを用いてデータを用意するスクリプトを用意します。
+
+デフォルトデータを作るために `script/insert_default_data.pl` と言うのを作りました。これをどこからでも使えるようにしてみましょう。スクリプトからデータを作っている部分を取り出し `sql/fixtures/default.pl` と言う名前で保存します：
+
+    # create default Categories
+    for my $category_name (qw/Design Programming Manager Administrator/) {
+        models('Schema::Category')->create({
+            name => $category_name
+        });
+    }
+    
+    # create default Jobs
+    my $programming_category =
+        models('Schema::Category')->find({ name => 'Programming' });
+    $programming_category->add_to_jobs({
+        type         => 'full-time',
+        company      => 'Sensio Labs',
+        logo         => 'sensio-labs.gif',
+        url          => 'http://www.sensiolabs.com/',
+        position     => 'Web Developer',
+        location     => 'Paris, France',
+        description  => q[You've already developed websites with symfony and you want to work with Open-Source technologies. You have a minimum of 3 years experience in web development with PHP or Java and you wish to participate to development of Web 2.0 sites using the best frameworks available.],
+        how_to_apply => 'Send your resume to fabien.potencier [at] sensio.com',
+        is_public    => 1,
+        is_activated => 1,
+        token        => 'job_sensio_labs',
+        email        => 'job@example.com',
+        expires_at   => '2010-10-10',
+    });
+    
+    my $design_category = models('Schema::Category')->find({ name => 'Design' });
+    $design_category->add_to_jobs({
+        type         => 'part-time',
+        company      => 'Extreme Sensio',
+        logo         => 'extreme-sensio.gif',
+        url          => 'http://www.extreme-sensio.com/',
+        position     => 'Web Designer',
+        location     => 'Paris, France',
+        description  => q[Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Utenim ad minim veniam, quis nostrud exercitation ullamco laborisnisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in. Voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpaqui officia deserunt mollit anim id est laborum.],
+      how_to_apply   => 'Send your resume to fabien.potencier [at] sensio.com',
+        is_public    => 1,
+        is_activated => 1,
+        token        => 'job_extreme_sensio',
+        email        => 'job@example.com',
+        expires_at   => '2010-10-10',
+    });
+    
+    {
+        my $cat_programming = models('Schema::Category')->find({ name => 'Programming' });
+        my $job = models('Schema::Job')->create({
+            category_id  => $cat_programming->id,
+            company      => 'Sensio Labs',
+            position     => 'Web Developer',
+            location     => 'Paris, France',
+            description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+            how_to_apply => 'Send your resume to lorem.ipsum [at] dolor.sit',
+            is_public    => 1,
+            is_activated => 1,
+            token        => 'job_expired',
+            email        => 'job@example.com',
+        });
+        $job->update({
+            created_at => '2005-12-01',
+            expires_at => '2005-12-31',
+        });
+    }
+    
+    
+    {
+        my $job_rs = models('Schema::Job');
+        my $cat_rs = models('Schema::Category');
+        
+        my $cat_programming = $cat_rs->find({ name => 'Programming' });
+        
+        for my $i (100 .. 130) {
+            my $job = $job_rs->create({
+                category_id  => $cat_programming->id,
+                company      => "Company $i",
+                position     => 'Web Developer',
+                location     => 'Paris, France',
+                description  => 'Lorem ipsum dolor sit amet, consectetur adipisicing elit.',
+                how_to_apply => "Send your resume to lorem.ipsum [at] company_${i}.sit",
+                is_public    => 1,
+                is_activated => 1,
+                token        => "job_$i",
+                email        => 'job@example.com',
+            });
+        }
+    }
+    
+    1;
+
+最後に `1;` を付け加えていることに注意してください。 Perl は外部ファイル読み込み時にそのスクリプトが真を返すことを期待しています。したがってこのようにおまじない的に `1;` をつけるようになっています。
+
+このコードスニペットを使用するにはどうするのでしょう。最初に `script/insert_default_data.pl` 自体を書き換えてみましょう。以下のようになります。
+
+    #!/usr/bin/env perl
+    
+    use strict;
+    use warnings;
+    use FindBin::libs;
+    
+    use DateTime;
+    use Jobeet::Models;
+    
+    my $datafile = models('home')->subdir(qw/sql fixtures/)->file('default.pl');
+    do $datafile or die $!;
+
+だいぶ短くなりました。このように `do $datafile` とするとコードスニペットを読み込むことができます。
+
+
+Categoryコントローラのテスト
+-------------------------
+
+簡単な Category コントローラからテストしてみましょう。
+
+この Category コントローラは show アクションしかもたないのでシナリオは単純です。show アクションは以下のようになっていました。
+
+    sub show :Path :Args(1) {
+        my ($self, $c, $category_name) = @_;
+    
+        my $category = models('Schema::Category')->find({ slug => $category_name })
+            or $c->detach('/default');
+    
+        $c->stash->{category} = $category;
+        $c->stash->{jobs} = $category->get_active_jobs({
+            rows => models('conf')->{max_jobs_on_category},
+            page => $c->req->param('page') || 1,
+        });
+    }
+
+ここでテストすべきは何でしょうか。モデルはすでにテストしてあります。従ってテストすべき内容は
+
+ * /category/{カテゴリslug名} でただしくこのコントローラが呼ばれるかどうか
+ * 存在しない場合ただしく404ページが表示されるかどうか
+ * 存在するカテゴリの場合 stash にただしくデータが入っているかどうか
+ * page パラメータがわたされたときページオブジェクトが連動しているかどうか
+
+とういうようになります。順番にやっていきましょう。コントローラのテストには `t/controller` と言うディレクトリを使うようにしましょう。
+
+まずひな形を作ります、`t/controller/category.t` を以下のように編集してください：
+
+    use strict;
+    use warnings;
+    
+    use Test::More;
+    use Jobeet::Test;
+    use Jobeet::Models;
+    
+    my $datafile = models('home')->subdir(qw/sql fixtures/)->file('default.pl');
+    do $datafile or die $!;
+    
+    # ここにテストを書く
+    
+    done_testing;
+
+コメントアウトした部分にテストコードを追加していきましょう。
+
+### アクションがただしく呼ばれるかどうか
+
+Category コントローラの show アクションは 'category' ネームスペースで引数を一つとります。
+
+    {
+        my $c = ctx_get('/category/foo');
+        is $c->req->action->reverse, 'category/show', 'action called ok';
+    }
+
+このような形で `ctx_get` を使い、`$c->req` を参照することでどのアクションが呼ばれるかテストすることができます。
+
+### 存在しない場合ただしく404ページが表示されるかどうか
+
+上記の foo と言うカテゴリは存在しないので 404 になり、また stash にはデータが入っていないはずです。上のテストにさらにコードを追加しましょう。
+
+    {
+        my $c = ctx_get('/category/foo');
+        is $c->req->action->reverse, 'category/show', 'action called ok';
+        is $c->res->status, '404', '404 status ok';
+        ok !$c->stash->{category}, 'category not set';
+        ok !$c->stash->{jobs}, 'jobs not set';
+    }
+
+### 存在するカテゴリの場合 stash にただしくデータが入っているかどうか
+
+次は存在するカテゴリのテストを書きましょう。
+
+    {
+        my $c = ctx_get('/category/design');
+        is $c->req->action->reverse, 'category/show', 'action called ok';
+        is $c->res->status, '200', '200 status ok';
+        isa_ok $c->stash->{category}, 'Jobeet::Schema::Result::Category';
+        isa_ok $c->stash->{jobs}, 'Jobeet::Schema::ResultSet::Job';
+        is $c->stash->{category}->slug, 'design', 'slug ok';
+    }
+
+design と言うカテゴリを取得し、それが stash に格納されているかテストしています。
+ここで stash 内の category オブジェクトに対してもテストしたくなるかもしれませんがそれはモデルのテストですることですのでここには書きません。唯一 URL とただしくマッチしているかどうかのテストで slug の値のみテストしています。
+
+
+### ページャのテスト
+
+pageクエリの値が反映されているかをチェックします
+
+    {
+        my $c = ctx_get('/category/programming');
+        is $c->stash->{jobs}->pager->current_page, 1, 'current page 1 ok';
+    }
+    
+    {
+        my $c = ctx_get('/category/programming?page=2');
+        is $c->stash->{jobs}->pager->current_page, 2, 'current page 2 ok';
+    }
+
+
+テストの実行
+----------
+
+Category コントローラのテストはこれで一通り書き終えました。実行してみましょう：
+
+<pre><code>$ prove -lv t/controller/category.t
+t/controller/category.t .. 
+ok 1 - action called ok
+ok 2 - 404 status ok
+ok 3 - category not set
+ok 4 - jobs not set
+ok 5 - action called ok
+ok 6 - 200 status ok
+ok 7 - The object isa Jobeet::Schema::Result::Category
+ok 8 - The object isa Jobeet::Schema::ResultSet::Job
+ok 9 - slug ok
+ok 10 - current page 1 ok
+ok 11 - current page 2 ok
+1..11
+ok
+<span class="string">All tests successful.</span>
+Files=1, Tests=11,  2 wallclock secs ( 0.03 usr  0.00 sys +  0.90 cusr  0.12 csys =  1.05 CPU)
+Result: PASS
+</code></pre>
+
+緑の All tests successful. の文字が誇らしいです。
+
+また明日
+------
+
+Job コントローラのテストも同様に書いてみてください。Category に比べるとシナリオが多いのでコードはもう少し長くなるはずです。しかしここまでチュートリアルをこなしているあなたならなんということはないでしょう。
+
+それではまた明日お会いしましょう。明日はセッションを使ったユーザー管理について学習します。
+
+
