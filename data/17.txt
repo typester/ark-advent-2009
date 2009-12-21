@@ -1,0 +1,196 @@
+Web サービス
+
+Jobeet のフィード追加に関して、求職者はリアルタイムで新しい求人情報が知らされます。
+
+一方では、求人を投稿するとき、できる限りもっとも注目されたいと願います。たくさんの小さな Web サイトで求人情報が配信される場合、適任者を見つける機会が増えます。 これがロングテールの力です。今日開発するWebサービスのおかげでアフィリエイトは自身の Web サイトに投稿された最新の求人情報を公開できます。
+
+アフィリエイト
+------------
+
+2日目の要件です：
+
+"ストーリー F7: アフィリエイトは現在アクティブな求人リストを読み取る"
+
+
+フィクスチャ
+-----------
+
+アフィリエイト用にフィクスチャデータを作りましょう：
+
+    # sql/fixtures/default.pl
+    {
+        my $affiliate = models('Schema::Affiliate')->create({
+            url       => 'http://www.sensio-labs.com/',
+            email     => 'fabien.potencier@example.com',
+            is_active => 1,
+        });
+        $affiliate->add_to_category_affiliate({
+            category_id => models('Schema::Category')->find({ name => 'Programming' })->id,
+        });
+    }
+    
+    {
+        my $affiliate = models('Schema::Affiliate')->create({
+            url       => 'http://www.symfony-project.org/',
+            email     => 'fabien.potencier@example.org',
+            is_active => 1,
+        });
+        $affiliate->add_to_category_affiliate({
+            category_id => models('Schema::Category')->find({ name => 'Design' })->id,
+        });
+        $affiliate->add_to_category_affiliate({
+            category_id => models('Schema::Category')->find({ name => 'Programming' })->id,
+        });
+    }
+
+実際のユーザーがアカウントを申し込むとき、トークンの生成が必要になります:
+
+    # Jobeet/Schema/Result/Affiliate.pm
+    use Digest::SHA1 qw/sha1_hex/;
+    use Data::UUID;
+    
+    sub insert {
+        my $self = shift;
+    
+        $self->token(sha1_hex(Data::UUID->new->create))
+            unless $self->token;
+    
+        $self->next::method(@_);
+    }
+
+デフォルトデータを作り直しておきましょう：
+
+    $ rm database.db
+    $ perl ./script/upgrade_database.pl
+    $ perl ./script/insert_default_data.pl
+
+
+求人情報のWebサービス
+------------------
+
+新しいリソースを作成するとき、最初に URL を定義するのはよい習慣です。API 用の新しいコントローラ Jobeet::Controller::API を作成します：
+
+    package Jobeet::Controller::API;
+    use Ark 'Controller';
+    
+    use Jobeet::Models;
+    
+    sub token :Chained('/') :PathPart('api') :CaptureArgs(1) {
+        my ($self, $c, $token) = @_;
+    
+        $c->detach('/default') unless length $token == 40;
+    
+        my $affiliate = models('Schema::Affiliate')->single({ token => $token })
+            or $c->detach('/default');
+    
+        $c->stash->{affiliate} = $affiliate;
+    }
+    
+    sub jobs :Chained('token') :Args(0) {
+        my ($self, $c) = @_;
+    }
+    
+    1;
+
+このコントローラでは `/api/{token}/jobs` という URL を定義しています。
+まず、token アクションが実行され、token 文字列が40文字でない場合とデータベースを検索して該当データがない場合、404ハンドラーへ処理を飛ばしています。
+
+tokenアクション内で detach されなかった場合（404でない場合）はそのあとに jobs アクションが実行されます。
+
+今回のウェブサービスは JSON 形式でデータを返すようにしてみましょう。
+JSON 形式のデータを出力するためには Ark::View::JSON というビュークラスが用意されていますので、これを継承するだけでそのビューの機能を利用できます。以下のような Jobeet::View::JSON を作成します：
+
+    package Jobeet::View::JSON;
+    use Ark 'View::JSON';
+    
+    has '+expose_stash' => (
+        default => 'json',
+    );
+
+    1;
+
+継承し、`expose_stash` という設定を変更しています。これはこのビューはデフォルトでは stash にはいっているデータすべてを JSON 形式で返すビューなので、それ以外のものを返したい場合ここでキー名を指定するようにします。ここでは json という名前を指定していますので、`$c->stash->{json}` の値がレンダリングされることになります。
+
+というわけでこの json データをアクション内で埋めておきます。
+
+    sub jobs :Chained('token') :Args(0) {
+        my ($self, $c) = @_;
+    
+        my $json = [];
+        my $affiliate = $c->stash->{affiliate};
+        my $max_rows  = models('conf')->{max_jobs_on_homepage};
+    
+        for my $category ($affiliate->categories) {
+            for my $job ($category->get_active_jobs({ rows => $max_rows })->all) {
+                push @$json, {
+                    category     => $category->name,
+                    type         => $job->type,
+                    company      => $job->company,
+                    url          => $job->url,
+                    position     => $job->position,
+                    location     => $job->location,
+                    description  => $job->description,
+                    how_to_apply => $job->how_to_apply,
+                    expires_at   => $job->expires_at->epoch,
+                };
+            }
+        }
+    
+        $c->stash->{json} = $json;
+    }
+    
+このままでは '/end' に処理が渡され、そこでは `View::MT` に処理が飛んでしまうため、この API 階層で再度 end を定義し上書きして View::JSON に処理が飛ぶようにします。
+
+    sub end :Private {
+        my ($self, $c) = @_;
+    
+        if ($c->stash->{json}) {
+            $c->forward( $c->view('JSON') );
+        }
+        else {
+            $c->forward('/end');
+        }
+    }
+
+Web サービスのテスト
+------------------
+
+Webサービスをテストを書いておきましょう：
+
+    use strict;
+    use warnings;
+    
+    use Test::More;
+    use Jobeet::Test;
+    use Jobeet::Models;
+    use JSON;
+    
+    my $datafile = models('home')->subdir(qw/sql fixtures/)->file('default.pl');
+    do $datafile or die $!;
+    
+    {
+        my $res = request( GET => '/api/foo/jobs' );
+        is $res->code, 404, '404 ok';
+    }
+    
+    {
+        my $data = models('Schema::Affiliate')->single({});
+    
+        my $res = request( GET => '/api/' . $data->token . '/jobs' );
+        is $res->code, 200, '200 ok';
+        like $res->content_type, qr!application/json!, 'content_type ok';
+    
+        my $json = from_json($res->content);
+        is $json->[0]{category}, $data->categories->first->name, 'category ok';
+    }
+    
+    done_testing;
+    
+
+また明日
+-------
+
+今日の宿題はこのアフィリエイトの登録フォームです。
+Ark::Form によるフォームの作成の復習をしておきましょう。
+
+明日は、JobeetのWebサイトに欠けている最後の機能である検索エンジンを実装します。
