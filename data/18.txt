@@ -1,0 +1,81 @@
+検索
+
+2日前、Jobeet のユーザーに最新の求人投稿を配信するフィードを追加しました。今日は、Jobeet の Web サイトの最新のメイン機能: 検索エンジンを実装することでユーザーエクスペリエンスの改善を継続します。
+
+検索する
+------
+
+フロントエンドの検索機能の実装はたやすいものです。最初に、Searchコントローラを作成します：
+
+    package Jobeet::Controller::Search;
+    use Ark 'Controller';
+    
+    use Jobeet::Models;
+    
+    sub index :Path {
+        my ($self, $c) = @_;
+    
+        my $query = $c->req->param('q')
+            or $c->detach('/default');
+    
+        $c->stash->{jobs} = models('Schema::Job')->search_fulltext($query);
+    }
+    
+    1;
+
+テンプレート（`search/index.mt`）も非常に単刀直入です:
+
+    ? extends 'common/jobs_base';
+    
+    ? block content => sub {
+    
+    <div id="jobs">
+    ?= include('job/partial_jobs', $c->stash->{jobs}->all );
+    </div>
+    
+    ? } # endblock content
+    
+
+検索自身は `search_fulltext` メソッドにデリゲートされます:
+
+    # Jobeet::Schema::ResultSet::Job
+    sub search_fulltext {
+        my ($self, $word) = @_;
+    
+        my $r = $self->search(
+            {
+                is_activated => 1,
+                -or          => [
+                    { description  => { -like => "%${word}%", } },
+                    { how_to_apply => { -like => "%${word}%", } },
+                ]
+            },
+            { order_by => { -desc => 'created_at' }, rows => 20 }
+        );
+    }
+
+今回は単純な LIKE 検索を使用します。より大規模なデータを検索する場合は別途検索エンジンを使用するのが一般的です。
+
+動作させるために、ベーステンプレートを更新します:
+
+            <div class="search">
+              <h2>Ask for a job</h2>
+              <form action="<?= $c->uri_for('/search') ?>" method="get">
+                <input type="text" name="q"
+                  id="search_keywords" />
+                <input type="submit" value="search" />
+                <div class="help">
+                  Enter some keywords (city, country, position, ...)
+                </div>
+              </form>
+            </div>
+
+また明日
+------
+
+今日は、1時間以内に多くの機能を持つ検索エンジンを実装しました。プロジェクトに新しい機能を追加したいと思うたびに、他のどこかで未解決であることを確認します。最初に、Ark フレームワークでネイティブに実装されてないことをチェックし、Ark プラグインをチェックします。 CPANライブラリをチェックするのはお忘れなく。
+
+明日は、ユーザーが検索ボックスで入力する際にリアルタイムで検索結果を更新することで検索エンジンのレスポンスを強化するために慎ましく JavaScriptを使います。もちろん、ArkでAJAXを使う方法を語る機会があります。
+
+
+
