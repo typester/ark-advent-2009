@@ -1,0 +1,162 @@
+デプロイ
+-------
+
+22日間、開発付属の開発サーバーでアプリケーションを動かしました。今日はこのアプリケーションをプロダクション環境のhttpdと一緒に動作させる方法を学びます。
+
+
+Ark の動作環境
+-------------
+
+Ark (0.1x系) は HTTP::Engine というライブラリ上で実装されています。
+この HTTP::Engine を使用すると `mod_perl`、`FastCGI`、`CGI`、`Ark開発サーバー` といった様々な環境を意識することなくコードをかけるようにしてくれるとともに、対応する環境すべてで動作するアプリケーションを書くことができます。
+
+したがって Ark アプリケーションは
+
+ * mod_perl
+ * FastCGI
+ * CGI
+ * 組み込みサーバー
+
+などで動作します。
+
+
+ブートストラップスクリプト
+----------------------
+
+Ark アプリケーションを開発サーバー以外で動かすためにはその環境に応じた起動スクリプトを書く必要があります。
+
+たとえば CGI でうごかすために script/jobeet.cgi を書いてみるとこのようになります。
+
+    #!/usr/bin/env perl
+    
+    use strict;
+    use warnings;
+    use FindBin::libs;
+    
+    use Jobeet;
+    use HTTP::Engine;
+    
+    my $app = Jobeet->new;
+    $app->setup_minimal;
+    
+    my $engine = HTTP::Engine->new(
+        interface => {
+            module          => 'CGI',
+            request_handler => $app->handler,
+        },
+    );
+    
+    $engine->run;
+
+FastCGI でうごかすための script/jobeet.fcgi を書いてみるとこのようになります：
+
+    #!/usr/bin/env perl
+    
+    use strict;
+    use warnings;
+    use FindBin::libs;
+    use Getopt::Long;
+    
+    use Jobeet;
+    use HTTP::Engine;
+    
+    GetOptions(
+        \my %option,
+        qw/detach nproc=i listen=s pidfile=s/,
+    );
+    
+    my $app = Jobeet->new;
+    $app->setup;
+    
+    my $engine = HTTP::Engine->new(
+        interface => {
+            module => 'FCGI',
+            args   => \%option,
+            request_handler => $app->handler,
+        },
+    );
+    
+    $engine->run;
+    
+FCGI はいろいろな動かし方ができるので、コマンドラインからオプションを指定できるよう、`Getopt::Long` を使って以下のオプションを指定できるようにしています：
+
+ * detach - 指定するとデーモンプロセスになります
+ * nproc  - たちあげるFCGIのプロセス数（デフォルト：1）
+ * listen - FCGI接続を待ち受ける。（UNIXソケットの場合はファイルパスを指定し、TCPポートでまちうけるときは :8080 のようにコロンをつけてポート番号を指定する）
+ * keep_stderr - STDERR をウェブサーバーにリダイレクトしない
+
+これらのオプションは `--nproc 10` というように指定することもできますが、頭文字だけとって `-n 10` としても OK です。
+
+
+CGI モード
+----------
+
+CGI と FastCGI で Jobeet のセットアップコードが違うのに気がついたでしょうか。
+
+CGIでは
+
+    $app->setup_minimal;
+
+FastCGIでは
+
+    $app->setup;
+
+としています。これはどのような違いがあるのでしょうか。
+
+Perlアプリケーションの動作環境には mod_perl/FastCGI のようにいったん立ち上げたプロセスを終了させずに使い回すものと、CGI のようにリクエストごとにプロセスを立ち上げるものがあります。
+Ark はデフォルトでは起動時にすべてのコンポーネント（Controller, Model, View) をロードするため、永続プロセスについては効率がいいですが、CGI では起動プロセスがネックになりパフォーマンスがでません。
+
+そこで、`setup_minimal` という特別のセットアップ方法を用意しているのです。
+これはリクエストに関して必要なコンポーネントしかロードしないものです。詳しくは Ark のドキュメントを参照していただくとして、ここでは CGI の場合には `setup_minimal` を使うのだなと覚えておいてください。
+
+
+lighttpd
+--------
+
+CGI や FastCGI スクリプトの作成方法がわかったところで、それをWebサーバーから使ってみましょう。
+
+ここでは lighttpd と一緒に使用する方法を説明します。
+
+まず、fastcgiスクリプトを起動します。
+
+    $ perl ./script/jobeet.fcgi -l tmp/socket
+
+このようにすると Jobeet アプリケションディレクトリの tmp/socket に UNIXソケットでまちうける FastCGI プロセスが立ち上がります。
+
+lighttpd 側ではこのような設定を書きます。
+
+    fastcgi.server = (
+        "" => (
+            ( "socket" => "/path/to/Jobeet/tmp/socket",
+              "check-local" => "disable", ),
+        ),
+    )
+
+socket には tmp/socket へのパスをフルパスで記述してください。また `mod_fastcgi` のロードも忘れないでください。
+
+これでブラウザーからアクセスすると Jobeet アプリケーションが表示されるはずです。
+
+しかしこのままでは画像やCSSなどの静的ファイルへのアクセスも FastCGI に飛んでしまいます。静的ファイルは lighttpd が直接レンダリングするよう修正しましょう：
+
+    $HTTP["url"] !~ "^/(css/|js/|images/)" {
+        fastcgi.server = (
+            "" => (
+                ( "socket" => "/path/to/Jobeet/tmp/socket",
+                  "check-local" => "disable", ),
+            ),
+        )
+    }
+
+このようにすると css, js, images ディレクトリのファイルは lighttpd が直接レンダリングします。それ以外の場合に FastCGI が呼ばれます。ほかにも静的ファイル用にパスを追加したい場合はこの正規表現をついかすればいいということです。
+
+
+また明日
+-------
+
+今回は CGI, FastCGI 用のブートストラップスクリプトを紹介し、lighttpd で動作させる方法を学びました。
+その他の動作環境での実行には HTTP::Engine やその httpd のドキュメントを参照するといいでしょう。
+
+プロジェクトのデプロイは Ark 開発のライフサイクルの一番最後のステップです。これはすべてが終わったことを意味しません。全くの逆です。 Webサイトの人生の始まりです。おそらくバグを修正しなければならず時間が経過したら新しい機能も追加したくなります。しかし Ark の構造と自由に使えるツールのおかげで、Webサイトのアップグレード作業はシンプルで、速く、安全です。
+
+明日はJobeetチュートリアルの最後の日です。 Jobeetの23日間に学んだことを振り返ります。
+
