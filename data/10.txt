@@ -52,7 +52,7 @@ token は求人作成時に自動的に発行されるようにしましょう�
         my $txn_guard = $self->result_source->schema->txn_scope_guard;
     
         my $category_id = delete $form->params->{category};
-        my $category = models('Schema::Category')->find($category_id)
+        my $category = models('Schema::Category')->find({ slug => $category_id })
             or die 'no such category_id: ', $category_id;
     
         my $job = $self->create({

@@ -50,7 +50,7 @@ jQueryの背景にある主要な原則はon*()HTML属性でふるまいを追�
       if (this.value.length >= 3 || this.value == '')
       {
         $('#jobs').load(
-          $(this).parents('form').attr('action'), { query: this.value + '*' }
+          $(this).parents('form').attr('action'), { query: this.value }
         );
       }
     });
@@ -84,24 +84,24 @@ AJAX呼び出しを行うとき、ページはすぐに更新されません。�
 
 これでHTMLを動作させるために必要なすべてのピースが用意されたので、これまで書いてきたJavaScriptを含むsearch.jsファイルを作ります:
 
-// root/js/search.js
-$(document).ready(function()
-{
-  $('.search input[type="submit"]').hide();
- 
-  $('#search_keywords').keyup(function(key)
-  {
-    if (this.value.length >= 3 || this.value == '')
+    // root/js/search.js
+    $(document).ready(function()
     {
-      $('#loader').show();
-      $('#jobs').load(
-        $(this).parents('form').attr('action'),
-        { q: this.value + '*' },
-        function() { $('#loader').hide(); }
-      );
-    }
-  });
-});
+      $('.search input[type="submit"]').hide();
+     
+      $('#search_keywords').keyup(function(key)
+      {
+        if (this.value.length >= 3 || this.value == '')
+        {
+          $('#loader').show();
+          $('#jobs').load(
+            $(this).parents('form').attr('action'),
+            { q: this.value + '*' },
+            function() { $('#loader').hide(); }
+          );
+        }
+      });
+    });
 
 この新しいファイルをインクルードするためにレイアウトも更新する必要があります:
 
